@@ -3,7 +3,8 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { InputController } = require('./input-controller.cjs');
 
-app.setName('WiiUltraConnect');
+app.setName('WiiUltraConnect Direct');
+if (process.env.WII_SMOKE !== '1') app.setPath('userData', path.join(app.getPath('appData'), 'WiiUltraConnect Direct'));
 const page = pathToFileURL(path.join(__dirname, '../src/index.html')).href;
 let win;
 let selected = null;
@@ -48,11 +49,8 @@ async function stopCapture() {
   await revokeControl();
 }
 function config() {
-  let iceServers;
-  try { iceServers = JSON.parse(process.env.WII_ICE_SERVERS || '[{"urls":"stun:stun.l.google.com:19302"}]'); }
-  catch { throw new Error('WII_ICE_SERVERS must be a JSON array.'); }
-  if (!Array.isArray(iceServers)) throw new Error('WII_ICE_SERVERS must be a JSON array.');
-  return { platform: process.platform, version: app.getVersion(), signalUrl: process.env.WII_SIGNAL_URL || 'ws://127.0.0.1:8787/signal', iceServers, iceTransportPolicy: process.env.WII_RELAY_ONLY === '1' ? 'relay' : 'all' };
+  // Deliberately ignore legacy signaling, STUN and TURN environment settings.
+  return { platform: process.platform, version: app.getVersion(), edition: 'Direct · Zero external services' };
 }
 app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler((contents, permission) => contents === win?.webContents && ['media', 'display-capture'].includes(permission));
@@ -114,7 +112,7 @@ app.whenReady().then(() => {
     win = new BrowserWindow({
       width: 1440, height: 940, minWidth: 1040, minHeight: 740,
       show: process.env.WII_SMOKE !== '1',
-      title: 'WiiUltraConnect', backgroundColor: '#f5f7fb', autoHideMenuBar: true,
+      title: 'WiiUltraConnect Direct', backgroundColor: '#f5f7fb', autoHideMenuBar: true,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false, webSecurity: true }
     });
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

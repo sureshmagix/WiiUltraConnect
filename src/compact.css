@@ -9,3 +9,7 @@
   .setup-panel { padding-top: 21px; padding-bottom: 20px; }
   .page-footer { margin-top: 16px; }
 }
+.invite-value { align-items: flex-start; }
+.invite-value textarea { font-family: Consolas, monospace; font-size: 10px; min-height: 70px; overflow-wrap: anywhere; }
+#response-input { font-family: Consolas, monospace; font-size: 10px; }
+#apply-response { margin-top: 12px; }

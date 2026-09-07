@@ -1,5 +1,6 @@
-import { parseInvitation, validateSignalUrl, MAX_CHAT_LENGTH } from './protocol.js';
+import { MAX_CHAT_LENGTH } from './protocol.js';
 import { FileTransfer } from './file-transfer.js';
+import { directIceConfig, decodePacket, encodePacket, offerFingerprint, validateAnswer, gatherComplete, INVITATION_TTL } from './direct-signaling.js';
 
 export class PeerSession extends EventTarget {
   constructor(config, options = {}) {
@@ -7,94 +8,93 @@ export class PeerSession extends EventTarget {
     this.config = config;
     this.options = options;
     this.channels = {};
-    this.pendingIce = [];
     this.closed = false;
-    this.signalQueue = Promise.resolve();
+    this.setupAbort = new AbortController();
+    this.phase = 'new';
     this.controlAllowed = false;
   }
   emit(type, detail) { this.dispatchEvent(new CustomEvent(type, { detail })); }
-  async connect(role, url, invitation, stream, settings = {}) {
-    this.role = role;
+  async createInvitation(stream, settings = {}) {
+    if (this.phase !== 'new' || this.closed) throw new Error('Start a new direct session first.');
+    this.phase = 'gathering';
+    this.role = 'host';
     this.stream = stream;
     this.settings = settings;
-    const join = role === 'viewer' ? parseInvitation(invitation) : null;
-    this.ws = new WebSocket(validateSignalUrl(url));
-    this.ws.addEventListener('message', event => {
-      this.signalQueue = this.signalQueue.then(() => this.handleSignal(JSON.parse(event.data))).catch(error => this.fail(error));
-    });
-    this.ws.addEventListener('close', () => { if (!this.closed) this.fail(new Error('Signaling disconnected. Reconnect to start a new session.')); });
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.ws.close(); reject(new Error('Signaling connection timed out. Check the server address.')); }, 10_000);
-      this.ws.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true });
-      this.ws.addEventListener('error', () => { clearTimeout(timer); reject(new Error('Cannot reach the signaling server. Start npm run dev or check its address.')); }, { once: true });
-      this.ws.addEventListener('close', () => { clearTimeout(timer); reject(new Error('Signaling connection closed.')); }, { once: true });
-    });
-    if (this.closed) throw new Error('Session was cancelled.');
-    this.sendSignal(role === 'host' ? { type: 'create' } : { type: 'join', ...join });
-    this.emit('status', role === 'host' ? 'Waiting for a viewer' : 'Joining the host');
-  }
-  sendSignal(m) {
-    if (this.ws?.readyState !== WebSocket.OPEN) throw new Error('Signaling is disconnected.');
-    this.ws.send(JSON.stringify(m));
-  }
-  async handleSignal(m) {
-    if (this.closed) return;
-    if (m.type === 'error') {
-      const messages = { INVALID_INVITATION: 'Invitation is invalid or expired.', ROOM_FULL: 'This room already has a viewer.', ROOM_EXPIRED: 'The room expired. Start a new session.', SERVER_BUSY: 'The signaling server is full.' };
-      throw new Error(messages[m.code] || `Signaling error: ${m.code}`);
-    }
-    if (m.type === 'created') return this.emit('invitation', m.invitation);
-    if (m.type === 'joined') { this.createPeer(); return; }
-    if (m.type === 'peer-left') { this.close(); return this.emit('ended', 'Your peer disconnected.'); }
-    if (m.type === 'peer-ready' && this.role === 'host') {
-      if (this.pc) throw new Error('Unexpected duplicate peer.');
+    try {
       this.createPeer();
       await this.pc.setLocalDescription(await this.pc.createOffer());
-      if (this.closed) return;
-      this.sendSignal({ type: 'offer', description: this.pc.localDescription.toJSON() });
-      return;
-    }
-    if (!this.pc) throw new Error('Received signaling before room membership.');
-    if (m.type === 'offer' || m.type === 'answer') {
-      if (m.type !== (this.role === 'host' ? 'answer' : 'offer')) throw new Error('Unexpected SDP role.');
-      await this.pc.setRemoteDescription(m.description);
-      for (const candidate of this.pendingIce.splice(0)) await this.pc.addIceCandidate(candidate);
-      if (m.type === 'offer') {
-        await this.pc.setLocalDescription(await this.pc.createAnswer());
-        if (!this.closed) this.sendSignal({ type: 'answer', description: this.pc.localDescription.toJSON() });
-      }
-    } else if (m.type === 'ice') {
-      if (this.pc.remoteDescription) await this.pc.addIceCandidate(m.candidate);
-      else {
-        if (this.pendingIce.length >= 256) throw new Error('Too many pending ICE candidates.');
-        this.pendingIce.push(m.candidate);
-      }
-    }
+      await gatherComplete(this.pc, this.setupAbort.signal);
+      const issuedAt = Date.now();
+      this.offer = { version: 1, kind: 'offer', sessionId: crypto.randomUUID(), issuedAt, expiresAt: issuedAt + INVITATION_TTL, description: this.pc.localDescription.toJSON() };
+      const code = encodePacket(this.offer);
+      this.phase = 'awaiting-answer';
+      this.armExpiry();
+      this.emit('status', 'Send the invitation, then paste the viewer response');
+      this.emit('invitation', code);
+      return code;
+    } catch (error) { this.close(); throw error; }
+  }
+  async createResponse(invitation) {
+    if (this.phase !== 'new' || this.closed) throw new Error('Start a new direct session first.');
+    const offer = decodePacket(invitation, 'offer');
+    this.phase = 'gathering';
+    this.role = 'viewer';
+    this.settings = {};
+    this.offer = offer;
+    try {
+      this.createPeer();
+      await this.pc.setRemoteDescription(offer.description);
+      await this.pc.setLocalDescription(await this.pc.createAnswer());
+      await gatherComplete(this.pc, this.setupAbort.signal);
+      const answer = { ...offer, kind: 'answer', offerHash: await offerFingerprint(offer), description: this.pc.localDescription.toJSON() };
+      const code = encodePacket(answer);
+      if (this.closed) throw new Error('Direct connection setup was cancelled.');
+      this.phase = 'awaiting-host';
+      this.armExpiry();
+      this.emit('status', 'Send your response back to the host promptly');
+      this.emit('response', code);
+      return code;
+    } catch (error) { this.close(); throw error; }
+  }
+  async applyResponse(code) {
+    if (this.closed || this.role !== 'host' || this.phase !== 'awaiting-answer' || this.applying) throw new Error('This invitation is no longer waiting for a response.');
+    this.applying = true;
+    try {
+      const answer = decodePacket(code, 'answer');
+      await validateAnswer(answer, this.offer);
+      if (this.closed) throw new Error('This invitation was cancelled.');
+      await this.pc.setRemoteDescription(answer.description);
+      this.phase = 'connecting';
+      clearTimeout(this.expiryTimer);
+      this.connectTimer = setTimeout(() => this.fail(new Error('Direct connection timed out. Check peer reachability, NAT and firewall settings. No relay fallback is used.')), 30_000);
+      this.emit('status', 'Connecting directly to the viewer');
+    } finally { this.applying = false; }
+  }
+  armExpiry() {
+    clearTimeout(this.expiryTimer);
+    this.expiryTimer = setTimeout(() => this.fail(new Error('The invitation expired. Create a new direct session.')), Math.max(1, this.offer.expiresAt - Date.now()));
   }
   createPeer() {
-    const pc = this.pc = new RTCPeerConnection({ iceServers: this.config.iceServers, iceTransportPolicy: this.config.iceTransportPolicy, bundlePolicy: 'max-bundle' });
-    this.emit('status', 'Connecting directly');
-    this.connectTimer = setTimeout(() => this.fail(new Error('Peer connection timed out. Configure a TURN server for restrictive networks.')), 30_000);
-    pc.onicecandidate = event => {
-      if (event.candidate && !this.closed) {
-        try { this.sendSignal({ type: 'ice', candidate: event.candidate.toJSON() }); } catch (error) { this.fail(error); }
-      }
-    };
+    const pc = this.pc = new RTCPeerConnection(directIceConfig());
+    this.emit('status', 'Gathering direct network addresses');
+    // Local SDP is exported only after ICE gathering completes. No trickle/signaling server.
     pc.onconnectionstatechange = () => {
       if (this.closed) return;
       this.emit('status', pc.connectionState);
       if (pc.connectionState === 'connected') {
+        this.phase = 'connected';
+        clearTimeout(this.expiryTimer);
         clearTimeout(this.connectTimer);
         clearTimeout(this.disconnectTimer);
         if (this.role === 'host') void this.tuneVideo().catch(error => this.emit('warning', error.message));
         this.emit('connected');
       }
-      if (pc.connectionState === 'failed') this.fail(new Error('The peer connection failed. Check the network and TURN configuration.'));
+      if (pc.connectionState === 'failed') this.fail(new Error('The direct connection failed. Create fresh codes and check NAT/firewall reachability. This version never uses a relay.'));
       if (pc.connectionState === 'disconnected') {
         this.setControl(false);
         this.emit('control-lost');
         clearTimeout(this.disconnectTimer);
-        this.disconnectTimer = setTimeout(() => this.fail(new Error('The peer connection was lost.')), 8000);
+        this.disconnectTimer = setTimeout(() => this.fail(new Error('The direct peer connection was lost.')), 8000);
       }
     };
     pc.ontrack = event => {
@@ -134,6 +134,7 @@ export class PeerSession extends EventTarget {
     } else {
       let budget = channel.label === 'input' ? 240 : 60, last = Date.now();
       channel.onmessage = event => {
+        if (this.closed) return;
         try {
           const now = Date.now(), cap = channel.label === 'input' ? 240 : 60;
           budget = Math.min(cap, budget + (now - last) * cap / 1000); last = now;
@@ -153,7 +154,7 @@ export class PeerSession extends EventTarget {
     }
     channel.onopen = () => { this.emit('channels', this.ready); if (channel.label === 'input' && this.role === 'host') this.setControl(false); };
     channel.onclose = () => {
-      // SCTP close can arrive before the peer-left WebSocket message on a normal exit.
+      // A closed SCTP channel ends the direct session without a signaling service.
       if (!this.closed) { this.close(); this.emit('ended', 'Your peer disconnected.'); }
     };
     channel.onerror = () => {
@@ -206,7 +207,10 @@ export class PeerSession extends EventTarget {
   close() {
     if (this.closed) return;
     this.closed = true;
+    this.phase = 'closed';
+    this.setupAbort.abort();
     this.controlAllowed = false;
+    clearTimeout(this.expiryTimer);
     clearTimeout(this.connectTimer);
     clearTimeout(this.disconnectTimer);
     clearInterval(this.statsTimer);
@@ -214,8 +218,5 @@ export class PeerSession extends EventTarget {
     for (const channel of Object.values(this.channels)) channel.close();
     this.pc?.close();
     for (const track of this.stream?.getTracks() || []) track.stop();
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'leave' }));
-    this.ws?.close();
-    this.pendingIce = [];
   }
 }

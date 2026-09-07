@@ -3,16 +3,6 @@ export const CHUNK_SIZE = 16 * 1024;
 export const HEADER_SIZE = 20;
 export const MAX_CHAT_LENGTH = 4000;
 export const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
-export function parseInvitation(text) {
-  const match = /^([a-f0-9]{12})\.([A-Za-z0-9_-]{32})$/.exec(text.trim());
-  if (!match) throw new Error('Paste the full invitation from your host.');
-  return { roomId: match[1], secret: match[2] };
-}
-export function validateSignalUrl(text) {
-  const url = new URL(text);
-  if (!['ws:', 'wss:'].includes(url.protocol) || url.username || url.password || url.hash) throw new Error('Use a ws:// or wss:// signaling address without credentials.');
-  return url.href;
-}
 export function safeFileName(name) {
   return String(name).split(/[\\/]/).pop().replace(/[\x00-\x1f<>:"|?*]/g, '_').slice(0, 180) || 'received-file';
 }

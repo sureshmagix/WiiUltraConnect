@@ -29,7 +29,9 @@ function showTab(value) {
 }
 function refreshUI() {
   const active = Boolean(peer), ready = Boolean(peer?.ready), locked = active || busy;
-  for (const id of ['host-tab', 'viewer-tab', 'start-host', 'start-viewer', 'refresh-displays', 'fps', 'bitrate', 'display-select', 'signal-url', 'invitation-input']) $(id).disabled = locked;
+  for (const id of ['host-tab', 'viewer-tab', 'start-host', 'start-viewer', 'refresh-displays', 'fps', 'bitrate', 'display-select', 'invitation-input']) $(id).disabled = locked;
+  $('response-input').disabled = busy || peer?.phase !== 'awaiting-answer';
+  $('apply-response').disabled = busy || peer?.phase !== 'awaiting-answer';
   $('start-host').disabled ||= !sourceList.length;
   $('disconnect').disabled = !locked;
   for (const id of ['chat-input', 'send-chat', 'file-input']) $(id).disabled = !ready;
@@ -59,7 +61,9 @@ async function reset(message = 'Ready to connect') {
   $('screen-empty').hidden = false;
   $('live-label').hidden = true;
   $('invitation-card').hidden = true;
+  $('response-card').hidden = true;
   $('invitation-output').value = '';
+  $('response-input').value = '';
   $('session-title').textContent = 'Ready when you are';
   $('route-stat').textContent = 'No active connection';
   $('fps-stat').textContent = '— FPS';
@@ -157,9 +161,20 @@ function receivedFile({ id, name, blob }) {
 }
 function bindPeer(session) {
   const on = (type, fn) => session.addEventListener(type, event => { if (peer === session) fn(event.detail); });
-  on('invitation', invitation => { $('invitation-output').value = invitation; $('invitation-card').hidden = false; $('session-title').textContent = 'Your screen is ready to share'; });
+  on('invitation', invitation => {
+    $('invitation-output').value = invitation; $('invitation-card').hidden = false; $('response-card').hidden = false;
+    $('code-title').textContent = '1. SEND YOUR INVITATION';
+    $('code-instructions').textContent = 'Send this full code privately to your viewer, then paste their response below. Expires in 10 minutes.';
+    $('session-title').textContent = 'Waiting for the viewer response'; refreshUI();
+  });
+  on('response', response => {
+    $('invitation-output').value = response; $('invitation-card').hidden = false;
+    $('code-title').textContent = 'SEND YOUR RESPONSE TO THE HOST';
+    $('code-instructions').textContent = 'Send this full code back promptly. The host pastes it and clicks Connect directly.';
+    $('session-title').textContent = 'Waiting for the host to apply your response'; refreshUI();
+  });
   on('status', status);
-  on('connected', () => { $('session-title').textContent = mode === 'host' ? 'You’re sharing your desktop' : 'You’re connected to the host'; refreshUI(); });
+  on('connected', () => { $('session-title').textContent = mode === 'host' ? 'You’re sharing your desktop directly' : 'You’re connected directly to the host'; $('invitation-card').hidden = true; $('response-card').hidden = true; $('invitation-output').value = ''; $('invitation-input').value = ''; $('response-input').value = ''; refreshUI(); });
   on('channels', refreshUI);
   on('stream', stream => displayStream(stream, false));
   on('chat', text => addMessage(text, false));
@@ -198,7 +213,8 @@ async function start() {
     if (current !== operation) return;
     const session = peer = new PeerSession(config, { files: { accept: acceptFile, onProgress: progress, onFile: receivedFile } });
     bindPeer(session);
-    await session.connect(mode, $('signal-url').value, $('invitation-input').value, localStream, settings);
+    if (mode === 'host') await session.createInvitation(localStream, settings);
+    else await session.createResponse($('invitation-input').value);
     if (current !== operation) { session.close(); return; }
     busy = false; refreshUI();
   } catch (error) {
@@ -232,6 +248,14 @@ $('copy-invitation').onclick = async () => {
   try { await navigator.clipboard.writeText($('invitation-output').value); $('copy-invitation').textContent = 'Copied'; setTimeout(() => { $('copy-invitation').textContent = 'Copy'; }, 2000); }
   catch { $('invitation-output').select(); notice('Select and copy the invitation with Ctrl/Cmd + C.'); }
 };
+$('apply-response').onclick = async () => {
+  if (!peer || peer.phase !== 'awaiting-answer' || busy) return;
+  const session = peer;
+  busy = true; notice(''); refreshUI();
+  try { await session.applyResponse($('response-input').value); }
+  catch (error) { notice(error.message); }
+  finally { if (peer === session) { busy = false; refreshUI(); } }
+};
 $('control-button').onclick = async () => {
   if (!peer?.ready || mode !== 'host') return;
   const session = peer;
@@ -257,8 +281,7 @@ window.addEventListener('beforeunload', () => { viewerInput.dispose(); peer?.clo
 try {
   if (!window.wii) throw new Error('Open WiiUltraConnect with npm run dev. The host requires Electron.');
   config = await window.wii.config();
-  $('signal-url').value = config.signalUrl;
-  $('platform-label').textContent = `${{ win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[config.platform] || 'Desktop'} workspace`;
+  $('platform-label').textContent = `${{ win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[config.platform] || 'Desktop'} · Direct edition`;
   await refreshSources();
   refreshUI();
 } catch (error) { notice(error.message); busy = true; refreshUI(); }

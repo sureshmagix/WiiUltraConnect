@@ -12,6 +12,6 @@ window.harness = {
     session.addEventListener('chat', e => this.messages.push(e.detail));
     session.addEventListener('input', e => this.input.push(e.detail));
     session.addEventListener('stream', e => { document.getElementById('remote').srcObject = e.detail; });
-    await session.connect('viewer', config.signalUrl, invitation);
+    return await session.createResponse(invitation);
   }
 };

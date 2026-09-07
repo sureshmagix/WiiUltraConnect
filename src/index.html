@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src ws: wss: blob:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'">
-  <title>WiiUltraConnect — Wii Ultra Connect</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src blob:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'">
+  <title>WiiUltraConnect Direct — Zero external services</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="compact.css">
 </head>
@@ -12,11 +12,11 @@
   <aside class="rail">
     <a class="brand-mark" href="#" aria-label="WiiUltraConnect home"><svg viewBox="0 0 32 32" fill="none"><path d="m5 9 5 15 6-11 6 11 5-15" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="6" r="2" fill="currentColor"/></svg></a>
     <div class="rail-item active" title="Connect" aria-label="Connect"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg></div>
-    <div class="rail-bottom"><span class="avatar">W</span><span class="rail-version">v0.1</span></div>
+    <div class="rail-bottom"><span class="avatar">W</span><span class="rail-version">v0.2</span></div>
   </aside>
   <div class="app-shell">
     <header class="topbar">
-      <div><span class="wordmark">Wii<span>Ultra</span>Connect</span><span class="brand-subtitle">Wii Ultra Connect</span></div>
+      <div><span class="wordmark">Wii<span>Ultra</span>Connect</span><span class="brand-subtitle">DIRECT EDITION · ZERO EXTERNAL SERVICES</span></div>
       <div class="topbar-right"><span class="local-device" id="platform-label">Desktop workspace</span><span class="badge" id="connection-badge"><i></i><span>Offline</span></span></div>
     </header>
     <main>
@@ -27,22 +27,23 @@
           <div class="section-label"><span class="step-number">01</span> Make a connection</div>
           <div class="segmented" role="tablist" aria-label="Connection mode"><button id="host-tab" role="tab" aria-selected="true" aria-controls="host-panel" class="selected">Share my screen</button><button id="viewer-tab" role="tab" aria-selected="false" aria-controls="viewer-panel">Connect to host</button></div>
           <div id="host-panel" role="tabpanel" aria-labelledby="host-tab">
-            <h2>Your space. Shared.</h2><p class="muted">Choose a display and invite someone in.</p>
+            <h2>Your space. Shared directly.</h2><p class="muted">Choose a display and create an invitation.</p>
             <div class="label-row"><label for="display-select">Display to share</label><button id="refresh-displays" class="text-button">Refresh</button></div>
             <select id="display-select" aria-label="Display to share"><option value="">Loading displays…</option></select>
             <div class="source-preview"><img id="source-image" alt="Preview of the selected display" hidden><div id="source-placeholder">Select a display to preview</div><span class="preview-label">DISPLAY PREVIEW</span></div>
             <div class="settings-grid"><div><label for="fps">Frame rate</label><select id="fps"><option value="30">30 FPS · Balanced</option><option value="60">60 FPS · Smooth</option></select></div><div><label for="bitrate">Video budget</label><select id="bitrate"><option value="2">2 Mbps</option><option value="4" selected>4 Mbps</option><option value="8">8 Mbps</option></select></div></div>
-            <button id="start-host" class="button primary full"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m0-13v7m-3-4 3-3 3 3"/></svg>Start sharing <span class="button-arrow">↗</span></button>
+            <button id="start-host" class="button primary full"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m0-13v7m-3-4 3-3 3 3"/></svg>Create invitation <span class="button-arrow">↗</span></button>
             <p class="small-note">You choose when to share and when to stop.</p>
           </div>
           <div id="viewer-panel" role="tabpanel" aria-labelledby="viewer-tab" hidden>
-            <h2>Meet on their desktop.</h2><p class="muted">Paste the private invitation your host sent you.</p>
-            <label for="invitation-input">Host invitation</label><textarea id="invitation-input" rows="3" placeholder="Paste invitation here" spellcheck="false" autocomplete="off" maxlength="128"></textarea>
-            <button id="start-viewer" class="button primary full">Connect to host <span class="button-arrow">↗</span></button>
+            <h2>Meet on their desktop.</h2><p class="muted">Paste the host invitation, then send your response back.</p>
+            <label for="invitation-input">Host invitation</label><textarea id="invitation-input" rows="4" placeholder="WUC-DIRECT-1.…" spellcheck="false" autocomplete="off" maxlength="103424"></textarea>
+            <button id="start-viewer" class="button primary full">Create response <span class="button-arrow">↗</span></button>
             <div class="viewer-tip"><span>↗</span><p>The host starts the screen share. Mouse and keyboard access stays in their hands.</p></div>
           </div>
-          <div id="invitation-card" class="invitation-card" hidden><span class="eyebrow">YOUR PRIVATE INVITATION</span><p>Share this with the person you want to connect.</p><div class="invite-value"><input id="invitation-output" readonly aria-label="Private invitation"><button id="copy-invitation" class="text-button">Copy</button></div></div>
-          <details class="server-settings"><summary>Connection settings <span>⌄</span></summary><label for="signal-url">Signaling server</label><input id="signal-url" type="url" spellcheck="false" placeholder="wss://your-server/signal"><p class="small-note">Both devices must use the same server. Use WSS across the internet.</p></details>
+          <div id="invitation-card" class="invitation-card" hidden><span class="eyebrow" id="code-title">1. SEND YOUR INVITATION</span><p id="code-instructions">Copy the complete code and share it with your viewer. Codes expire after 10 minutes.</p><div class="invite-value"><textarea id="invitation-output" readonly rows="3" aria-label="Your connection code" spellcheck="false"></textarea><button id="copy-invitation" class="text-button">Copy</button></div></div>
+          <div id="response-card" class="invitation-card" hidden><label for="response-input">2. Paste the viewer response</label><textarea id="response-input" rows="3" placeholder="WUC-DIRECT-1.…" spellcheck="false" autocomplete="off" maxlength="103424"></textarea><button id="apply-response" class="button primary full">Connect directly</button></div>
+          <details class="server-settings"><summary>Direct connection requirements <span>⌄</span></summary><p class="small-note">No signaling, STUN or TURN services are used. Internet connections require reachable peer addresses and firewall access. Restrictive NAT and CGNAT can prevent a connection. Share connection codes privately; they contain network addresses.</p></details>
           <div class="setup-footer"><i></i> Built for Windows, macOS & Linux</div>
         </section>
         <section class="session-panel card">
