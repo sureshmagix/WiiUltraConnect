@@ -1,0 +1,37 @@
+{
+  "name": "wiiultraconnect",
+  "productName": "WiiUltraConnect",
+  "version": "0.1.0",
+  "description": "Wii Ultra Connect — peer-to-peer screen sharing, chat, files, and remote control",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "engines": { "node": ">=22.14" },
+  "scripts": {
+    "start": "electron .",
+    "dev": "node scripts/dev.mjs",
+    "signal": "node server/index.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "dependencies": { "ws": "8.21.3" },
+  "optionalDependencies": { "@nut-tree-fork/nut-js": "4.2.6" },
+  "devDependencies": { "electron": "44.2.0", "electron-builder": "26.15.3" },
+  "build": {
+    "appId": "com.wiiultraconnect.desktop",
+    "productName": "WiiUltraConnect",
+    "directories": { "output": "release" },
+    "files": ["electron/**/*", "src/**/*", "package.json"],
+    "asarUnpack": ["node_modules/@nut-tree*/**/*", "**/*.node"],
+    "win": { "target": ["nsis"] },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.productivity",
+      "extendInfo": { "NSScreenCaptureUsageDescription": "Share a display with the person you invite to WiiUltraConnect." }
+    },
+    "linux": { "target": ["AppImage"], "category": "Network" }
+  }
+}

@@ -1,0 +1,11 @@
+import { spawn } from 'node:child_process';
+import electron from 'electron';
+import { createSignalingServer } from '../server/signaling.mjs';
+const server = createSignalingServer();
+const { port } = await server.listen(0);
+const env = { ...process.env, WII_SMOKE: '1', WII_SMOKE_FPS: process.argv[2] === '60' ? '60' : '30', WII_SIGNAL_URL: `ws://127.0.0.1:${port}/signal`, WII_ICE_SERVERS: '[]' };
+delete env.ELECTRON_RUN_AS_NODE;
+const child = spawn(electron, ['scripts/smoke-main.cjs'], { env, stdio: 'inherit', windowsHide: true });
+const timeout = setTimeout(() => child.kill(), 60_000);
+child.on('error', async error => { console.error(error); clearTimeout(timeout); await server.close(); process.exit(1); });
+child.on('exit', async code => { clearTimeout(timeout); await server.close(); process.exit(code ?? 1); });

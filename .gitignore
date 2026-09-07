@@ -1,0 +1,11 @@
+node_modules/
+release/
+artifacts/
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini
