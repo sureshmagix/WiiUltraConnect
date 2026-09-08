@@ -1,15 +1,333 @@
-/* Keep the full workspace reachable at common laptop window heights. */
+/* WiiUltraConnect — Modern User-Friendly Styling & Hero System Code Display */
+
+/* Keep the full workspace reachable at common laptop window heights */
 @media (max-height: 950px) {
-  main { padding-top: 25px; }
-  .page-heading { margin-bottom: 22px; }
-  .screen-stage { height: 275px; }
+  main { padding-top: 20px; }
+  .page-heading { margin-bottom: 18px; }
+  .screen-stage { height: 280px; }
   .messages { height: 94px; }
-  .source-preview { height: 120px; margin-bottom: 17px; }
-  .segmented { margin: 20px 0; }
-  .setup-panel { padding-top: 21px; padding-bottom: 20px; }
-  .page-footer { margin-top: 16px; }
+  .source-preview { height: 110px; margin-bottom: 14px; }
+  .segmented { margin: 14px 0 16px; }
+  .setup-panel { padding-top: 18px; padding-bottom: 18px; }
+  .page-footer { margin-top: 14px; }
 }
-.invite-value { align-items: flex-start; }
-.invite-value textarea { font-family: Consolas, monospace; font-size: 10px; min-height: 70px; overflow-wrap: anywhere; }
-#response-input { font-family: Consolas, monospace; font-size: 10px; }
-#apply-response { margin-top: 12px; }
+
+/* Route selection (LAN / WAN / Auto) */
+.network-route-section {
+  margin-bottom: 14px;
+  background: #f8fafb;
+  border: 1px solid #e2e8ec;
+  border-radius: 9px;
+  padding: 10px 12px;
+}
+.label-row-tight {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.network-route-section select {
+  font-size: 11px;
+  font-weight: 550;
+  padding: 8px 10px;
+  background: #ffffff;
+  border-radius: 6px;
+  border: 1px solid #d4dde3;
+}
+.route-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.route-badge.auto {
+  background: #e6f4ef;
+  color: #007f72;
+  border: 1px solid #bce1d4;
+}
+.route-badge.lan {
+  background: #eaf2ff;
+  color: #1a56db;
+  border: 1px solid #c3d9ff;
+}
+.route-badge.wan {
+  background: #fdf2f8;
+  color: #9d174d;
+  border: 1px solid #fbcfe8;
+}
+.route-mode-hint {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   PROMINENT HERO SYSTEM CODE BOX
+   ========================================================================== */
+.system-code-hero {
+  margin: 14px 0 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fcfa 100%);
+  border: 2px solid #007f72;
+  border-radius: 12px;
+  padding: 16px 14px;
+  box-shadow: 0 4px 16px rgba(0, 127, 114, 0.08);
+  text-align: center;
+  position: relative;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.system-code-hero.streaming {
+  border-color: #0c8269;
+  box-shadow: 0 4px 20px rgba(12, 130, 105, 0.16);
+}
+
+.code-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.code-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #007f72;
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #007f72;
+  box-shadow: 0 0 0 0 rgba(0, 127, 114, 0.7);
+  animation: pulse 1.8s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(0, 127, 114, 0.7); }
+  70% { box-shadow: 0 0 0 6px rgba(0, 127, 114, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 127, 114, 0); }
+}
+
+.status-pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.status-pill.ready {
+  background: #e6f4ef;
+  color: #007f72;
+}
+.status-pill.active {
+  background: #def7ec;
+  color: #03543f;
+}
+
+.code-hero-value-box {
+  background: #f0f8f5;
+  border: 1px dashed #007f72;
+  border-radius: 8px;
+  padding: 12px 6px;
+  margin: 8px 0;
+}
+
+.hero-code-text {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: #007f72;
+  display: block;
+  user-select: all;
+}
+
+.hero-code-instruction {
+  font-size: 11px;
+  color: #556965;
+  margin: 6px 0 12px;
+  line-height: 1.4;
+}
+
+.code-hero-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.hero-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 12px;
+  font-size: 11px;
+  font-weight: 650;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #2c3e50;
+  border: 1px solid #d0ded7;
+  transition: all 0.15s ease;
+}
+.hero-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.hero-btn:hover {
+  background: #eef6f3;
+  color: #007f72;
+  border-color: #007f72;
+}
+
+.hero-btn.primary-btn {
+  background: #007f72;
+  color: #ffffff;
+  border-color: #007f72;
+}
+.hero-btn.primary-btn:hover {
+  background: #00685d;
+}
+.hero-btn.copied {
+  background: #10b981 !important;
+  color: #ffffff !important;
+  border-color: #10b981 !important;
+}
+
+/* Collapsible QR Code Panel */
+.qr-panel {
+  margin-top: 14px;
+  padding: 14px;
+  background: #ffffff;
+  border: 1px solid #cce3d8;
+  border-radius: 9px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.qr-caption {
+  font-size: 10px;
+  color: #5f756e;
+}
+
+/* Display & Settings Box */
+.display-settings-box {
+  margin-top: 14px;
+  margin-bottom: 14px;
+}
+
+/* Big Main Action Button */
+.main-action-btn {
+  min-height: 46px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 4px 12px rgba(0, 127, 114, 0.2);
+  transition: background 0.15s, transform 0.1s;
+}
+.main-action-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.main-action-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.main-action-btn.active-sharing {
+  background: #dc2626 !important;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25) !important;
+}
+.main-action-btn.active-sharing:hover:not(:disabled) {
+  background: #b91c1c !important;
+}
+
+/* Viewer Card */
+.viewer-card {
+  margin-top: 8px;
+  margin-bottom: 20px;
+}
+.large-input-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  display: block;
+  margin-bottom: 8px;
+}
+.input-code-wrapper {
+  margin-bottom: 6px;
+}
+.large-code-input {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  text-align: center;
+  color: #0f172a;
+  background: #ffffff;
+  border: 2px solid #007f72;
+  border-radius: 9px;
+  padding: 12px 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s;
+}
+.large-code-input:focus {
+  border-color: #007f72;
+  box-shadow: 0 0 0 4px rgba(0, 127, 114, 0.18);
+  outline: none;
+}
+.code-format-hint {
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.viewer-features-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #f8fafb;
+  border: 1px solid #e2e8ec;
+  border-radius: 9px;
+  padding: 12px;
+  margin-top: 14px;
+}
+.feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.feat-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+.feature-item div {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #475569;
+}
+.feature-item strong {
+  display: block;
+  color: #1e293b;
+  font-size: 11px;
+  margin-bottom: 1px;
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  background: #10b981;
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}

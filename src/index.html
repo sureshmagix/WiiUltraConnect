@@ -3,67 +3,296 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src blob:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'">
-  <title>WiiUltraConnect Direct — Zero external services</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws: wss: http: https: blob:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'">
+  <title>WiiUltraConnect — Screen Sharing, Chat & Remote Control</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="compact.css">
 </head>
 <body>
   <aside class="rail">
-    <a class="brand-mark" href="#" aria-label="WiiUltraConnect home"><svg viewBox="0 0 32 32" fill="none"><path d="m5 9 5 15 6-11 6 11 5-15" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="6" r="2" fill="currentColor"/></svg></a>
-    <div class="rail-item active" title="Connect" aria-label="Connect"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg></div>
-    <div class="rail-bottom"><span class="avatar">W</span><span class="rail-version">v0.2</span></div>
+    <a class="brand-mark" href="#" aria-label="WiiUltraConnect home">
+      <svg viewBox="0 0 32 32" fill="none"><path d="m5 9 5 15 6-11 6 11 5-15" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="6" r="2" fill="currentColor"/></svg>
+    </a>
+    <div class="rail-item active" title="Connect" aria-label="Connect">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>
+    </div>
+    <div class="rail-bottom"><span class="avatar">W</span><span class="rail-version">v0.2.1</span></div>
   </aside>
+
   <div class="app-shell">
     <header class="topbar">
-      <div><span class="wordmark">Wii<span>Ultra</span>Connect</span><span class="brand-subtitle">DIRECT EDITION · ZERO EXTERNAL SERVICES</span></div>
-      <div class="topbar-right"><span class="local-device" id="platform-label">Desktop workspace</span><span class="badge" id="connection-badge"><i></i><span>Offline</span></span></div>
+      <div>
+        <span class="wordmark">Wii<span>Ultra</span>Connect</span>
+        <span class="brand-subtitle">DIRECT P2P · LAN & INTERNET / WAN</span>
+      </div>
+      <div class="topbar-right">
+        <span class="local-device" id="platform-label">Desktop workspace</span>
+        <span class="badge" id="connection-badge"><i class="badge-dot"></i><span>Ready</span></span>
+      </div>
     </header>
+
     <main>
-      <div class="page-heading"><div><div class="eyebrow">YOUR DESKTOP, CLOSER</div><h1>A little distance. No limits.</h1><p>Share a screen, work together, and keep the conversation going.</p></div><span class="privacy-note"><svg viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></svg>Encrypted peer connection</span></div>
+      <div class="page-heading">
+        <div>
+          <div class="eyebrow">EFFORTLESS P2P COLLABORATION</div>
+          <h1>Connect over Local Wi-Fi or Internet</h1>
+          <p>Share your screen or support a remote computer with instant, crystal-clear 6-digit codes.</p>
+        </div>
+        <span class="privacy-note">
+          <svg viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></svg>
+          Direct Encrypted P2P
+        </span>
+      </div>
+
       <div id="notice" class="notice" role="status" hidden></div>
+
       <div class="workspace-grid">
         <section class="setup-panel card">
-          <div class="section-label"><span class="step-number">01</span> Make a connection</div>
-          <div class="segmented" role="tablist" aria-label="Connection mode"><button id="host-tab" role="tab" aria-selected="true" aria-controls="host-panel" class="selected">Share my screen</button><button id="viewer-tab" role="tab" aria-selected="false" aria-controls="viewer-panel">Connect to host</button></div>
+          <!-- ROUTE SELECTION (LAN / WAN / AUTO) -->
+          <div class="network-route-section">
+            <div class="label-row-tight">
+              <label for="network-mode-select">Connection Mode</label>
+              <span id="route-mode-badge" class="route-badge auto">Auto (LAN/WAN)</span>
+            </div>
+            <select id="network-mode-select" aria-label="Connection Route">
+              <option value="auto" selected>🌐 Auto (Smart Hybrid: Direct LAN if local, else Internet)</option>
+              <option value="lan">🏠 Local LAN Only (Wi-Fi / Office Subnet)</option>
+              <option value="wan">☁️ Internet / WAN (Remote over Web)</option>
+            </select>
+            <div id="route-mode-hint" class="route-mode-hint">
+              Automatically negotiates direct LAN if on same Wi-Fi, otherwise connects across Internet.
+            </div>
+          </div>
+
+          <!-- PRIMARY TAB SELECTOR -->
+          <div class="segmented" role="tablist" aria-label="Connection mode">
+            <button id="host-tab" role="tab" aria-selected="true" aria-controls="host-panel" class="selected">Share Screen</button>
+            <button id="viewer-tab" role="tab" aria-selected="false" aria-controls="viewer-panel">Connect to Remote</button>
+          </div>
+
+          <!-- HOST PANEL (SHARE SCREEN) -->
           <div id="host-panel" role="tabpanel" aria-labelledby="host-tab">
-            <h2>Your space. Shared directly.</h2><p class="muted">Choose a display and create an invitation.</p>
-            <div class="label-row"><label for="display-select">Display to share</label><button id="refresh-displays" class="text-button">Refresh</button></div>
-            <select id="display-select" aria-label="Display to share"><option value="">Loading displays…</option></select>
-            <div class="source-preview"><img id="source-image" alt="Preview of the selected display" hidden><div id="source-placeholder">Select a display to preview</div><span class="preview-label">DISPLAY PREVIEW</span></div>
-            <div class="settings-grid"><div><label for="fps">Frame rate</label><select id="fps"><option value="30">30 FPS · Balanced</option><option value="60">60 FPS · Smooth</option></select></div><div><label for="bitrate">Video budget</label><select id="bitrate"><option value="2">2 Mbps</option><option value="4" selected>4 Mbps</option><option value="8">8 Mbps</option></select></div></div>
-            <button id="start-host" class="button primary full"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4m0-13v7m-3-4 3-3 3 3"/></svg>Create invitation <span class="button-arrow">↗</span></button>
-            <p class="small-note">You choose when to share and when to stop.</p>
+            <!-- PROMINENT HERO SYSTEM CODE BOX -->
+            <div class="system-code-hero">
+              <div class="code-hero-top">
+                <span class="code-hero-badge"><i class="pulse-dot"></i> Your System Code</span>
+                <span id="code-status-pill" class="status-pill ready">Ready</span>
+              </div>
+              <div class="code-hero-value-box">
+                <span id="session-code-display" class="hero-code-text">Generating…</span>
+              </div>
+              <p class="hero-code-instruction">Share this code with the person joining your session.</p>
+              
+              <div class="code-hero-buttons">
+                <button id="copy-invitation" class="hero-btn primary-btn" title="Copy code to clipboard">
+                  <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <span id="copy-btn-text">Copy Code</span>
+                </button>
+                <button id="toggle-qr" class="hero-btn" title="Show QR code">
+                  <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zm4 0h3v3h-3zm0 4h3v3h-3zm-4 0h3v3h-3z"/></svg>
+                  <span>QR Code</span>
+                </button>
+                <button id="refresh-code-btn" class="hero-btn" title="Generate fresh code">
+                  <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
+                  <span>New Code</span>
+                </button>
+              </div>
+
+              <!-- Collapsible QR Code Panel -->
+              <div id="qr-panel" class="qr-panel" hidden>
+                <div id="qr-svg-wrapper"></div>
+                <span class="qr-caption">Scan with mobile device to join</span>
+              </div>
+            </div>
+
+            <!-- DISPLAY SELECTOR & CONFIG -->
+            <div class="display-settings-box">
+              <div class="label-row">
+                <label for="display-select">Screen to Broadcast</label>
+                <button id="refresh-displays" class="text-button">Refresh</button>
+              </div>
+              <select id="display-select" aria-label="Display to share"><option value="">Loading displays…</option></select>
+
+              <div class="source-preview">
+                <img id="source-image" alt="Preview of the selected display" hidden>
+                <div id="source-placeholder">Select a display to preview</div>
+                <span class="preview-label">DISPLAY PREVIEW</span>
+              </div>
+
+              <div class="settings-grid">
+                <div>
+                  <label for="fps">Frame Rate</label>
+                  <select id="fps">
+                    <option value="30">30 FPS · Balanced</option>
+                    <option value="60" selected>60 FPS · Smooth</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="bitrate">Video Budget</label>
+                  <select id="bitrate">
+                    <option value="2">2 Mbps</option>
+                    <option value="4" selected>4 Mbps</option>
+                    <option value="8">8 Mbps</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- BIG START / STOP SHARING BUTTON -->
+            <button id="start-host" class="button primary full main-action-btn">
+              <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span id="start-host-text">Start Screen Sharing</span>
+            </button>
           </div>
+
+          <!-- VIEWER PANEL (CONNECT TO HOST) -->
           <div id="viewer-panel" role="tabpanel" aria-labelledby="viewer-tab" hidden>
-            <h2>Meet on their desktop.</h2><p class="muted">Paste the host invitation, then send your response back.</p>
-            <label for="invitation-input">Host invitation</label><textarea id="invitation-input" rows="4" placeholder="WUC-DIRECT-1.…" spellcheck="false" autocomplete="off" maxlength="103424"></textarea>
-            <button id="start-viewer" class="button primary full">Create response <span class="button-arrow">↗</span></button>
-            <div class="viewer-tip"><span>↗</span><p>The host starts the screen share. Mouse and keyboard access stays in their hands.</p></div>
+            <div class="viewer-card">
+              <label for="session-code-input" class="large-input-label">Remote Session Code</label>
+              <div class="input-code-wrapper">
+                <input id="session-code-input" class="large-code-input" type="text" placeholder="482-910" maxlength="15" autocomplete="off" spellcheck="false">
+              </div>
+              <span class="code-format-hint">Enter the 6-digit code (e.g. 482-910)</span>
+
+              <button id="start-viewer" class="button primary full main-action-btn">
+                <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                <span>Connect to Screen</span>
+              </button>
+            </div>
+
+            <div class="viewer-features-list">
+              <div class="feature-item">
+                <span class="feat-icon">⚡</span>
+                <div><strong>High-Speed P2P</strong><span>Direct LAN (<1ms) or encrypted Internet STUN</span></div>
+              </div>
+              <div class="feature-item">
+                <span class="feat-icon">🔒</span>
+                <div><strong>Secure & Controlled</strong><span>Host retains full control and can stop anytime</span></div>
+              </div>
+              <div class="feature-item">
+                <span class="feat-icon">📁</span>
+                <div><strong>Chat & File Transfers</strong><span>Real-time messages and chunked file sharing</span></div>
+              </div>
+            </div>
           </div>
-          <div id="invitation-card" class="invitation-card" hidden><span class="eyebrow" id="code-title">1. SEND YOUR INVITATION</span><p id="code-instructions">Copy the complete code and share it with your viewer. Codes expire after 10 minutes.</p><div class="invite-value"><textarea id="invitation-output" readonly rows="3" aria-label="Your connection code" spellcheck="false"></textarea><button id="copy-invitation" class="text-button">Copy</button></div></div>
-          <div id="response-card" class="invitation-card" hidden><label for="response-input">2. Paste the viewer response</label><textarea id="response-input" rows="3" placeholder="WUC-DIRECT-1.…" spellcheck="false" autocomplete="off" maxlength="103424"></textarea><button id="apply-response" class="button primary full">Connect directly</button></div>
-          <details class="server-settings"><summary>Direct connection requirements <span>⌄</span></summary><p class="small-note">No signaling, STUN or TURN services are used. Internet connections require reachable peer addresses and firewall access. Restrictive NAT and CGNAT can prevent a connection. Share connection codes privately; they contain network addresses.</p></details>
+
+          <!-- ADVANCED SETTINGS ACCORDION -->
+          <details class="server-settings">
+            <summary>Network Details & Custom Server <span>⌄</span></summary>
+            <div class="settings-content">
+              <div class="lan-info">
+                <span class="lan-label">Local LAN IP:</span>
+                <span id="lan-ip-display" class="lan-val">Detecting...</span>
+              </div>
+              <div class="lan-info">
+                <span class="lan-label">Internet Route:</span>
+                <span id="wan-status-display" class="lan-val">STUN (Google / Cloudflare)</span>
+              </div>
+
+              <label for="signal-url">Signaling Server URL</label>
+              <input id="signal-url" type="text" value="ws://127.0.0.1:8787/signal" spellcheck="false">
+
+              <!-- Air-gapped / Manual Fallback -->
+              <details class="manual-sdp-details">
+                <summary>Offline Air-Gapped Mode (Manual SDP) <span>⌄</span></summary>
+                <div class="manual-sdp-box">
+                  <p class="small-note">For networks without signaling server access, exchange full SDP descriptions manually.</p>
+                  <div id="manual-host-area" hidden>
+                    <label for="invitation-output">Offline Offer</label>
+                    <textarea id="invitation-output" rows="3" readonly></textarea>
+                    <label for="response-input">Viewer Response</label>
+                    <textarea id="response-input" rows="3" placeholder="Paste response here"></textarea>
+                    <button id="apply-response" class="button primary full">Connect offline</button>
+                  </div>
+                  <div id="manual-viewer-area">
+                    <label for="invitation-input">Host Offline Code</label>
+                    <textarea id="invitation-input" rows="3" placeholder="Paste host offer here"></textarea>
+                    <button id="manual-viewer-btn" class="button subtle full">Generate offline response</button>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </details>
+
           <div class="setup-footer"><i></i> Built for Windows, macOS & Linux</div>
         </section>
+
+        <!-- SESSION & COLLABORATION PANEL -->
         <section class="session-panel card">
-          <div class="session-heading"><div><div class="section-label"><span class="step-number">02</span> Your shared workspace</div><h2 id="session-title">Ready when you are</h2></div><div class="session-actions"><button id="fullscreen" class="icon-button" aria-label="View screen fullscreen" title="Fullscreen" disabled>⛶</button><button id="disconnect" class="button danger" disabled>End session</button></div></div>
+          <div class="session-heading">
+            <div>
+              <div class="section-label"><span class="step-number">LIVE</span> Workspace</div>
+              <h2 id="session-title">Ready when you are</h2>
+            </div>
+            <div class="session-actions">
+              <button id="fullscreen" class="icon-button" aria-label="View screen fullscreen" title="Fullscreen" disabled>⛶</button>
+              <button id="disconnect" class="button danger" disabled>End session</button>
+            </div>
+          </div>
+
           <div class="screen-stage" id="screen-stage">
             <video id="screen-video" autoplay playsinline muted tabindex="0" aria-label="Shared desktop. Click to focus remote input when enabled." hidden></video>
-            <div id="screen-empty" class="screen-empty"><div class="desktop-illustration"><div class="mini-window back"><div></div><span></span><span></span></div><div class="mini-window front"><div><i></i><i></i><i></i></div><svg viewBox="0 0 80 55"><path d="m23 21 9 15 10-21 12 21 9-15" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span class="link-bubble">↗</span></div><h3>Good things happen together.</h3><p>Your shared screen will appear here.<br>Start sharing or connect to a host to get going.</p><div class="empty-tags"><span>Screen sharing</span><i>·</i><span>Chat</span><i>·</i><span>File transfer</span></div></div>
-            <span id="live-label" class="live-label" hidden><i></i><span>LIVE</span></span>
+            <div id="screen-empty" class="screen-empty">
+              <div class="desktop-illustration">
+                <div class="mini-window back"><div></div><span></span><span></span></div>
+                <div class="mini-window front"><div><i></i><i></i><i></i></div><svg viewBox="0 0 80 55"><path d="m23 21 9 15 10-21 12 21 9-15" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <span class="link-bubble">↗</span>
+              </div>
+              <h3>Good things happen together.</h3>
+              <p>Your shared screen will appear here.<br>Start sharing or enter a code to connect.</p>
+              <div class="empty-tags"><span>Screen sharing</span><i>·</i><span>Chat</span><i>·</i><span>File transfer</span><i>·</i><span>Remote control</span></div>
+            </div>
+            <span id="live-label" class="live-label" hidden><i class="live-dot"></i><span>LIVE</span></span>
           </div>
-          <div class="screen-toolbar"><div class="stats"><span id="route-stat">No active connection</span><span id="fps-stat">— FPS</span><span id="rtt-stat">— ms</span></div><button id="control-button" class="button subtle" disabled>Allow remote control</button></div>
+
+          <div class="screen-toolbar">
+            <div class="stats">
+              <span id="route-stat">No active connection</span>
+              <span id="fps-stat">— FPS</span>
+              <span id="rtt-stat">— ms</span>
+            </div>
+            <button id="control-button" class="button subtle" disabled>Allow remote control</button>
+          </div>
+
           <div id="control-hint" class="control-hint" hidden></div>
-          <div class="collaboration-area"><div class="collaboration-tabs" role="tablist" aria-label="Collaboration"><button id="chat-tab" role="tab" aria-selected="true" aria-controls="chat-panel" class="selected">Conversation <span id="chat-count">0</span></button><button id="files-tab" role="tab" aria-selected="false" aria-controls="files-panel">Files <span id="files-count">0</span></button><span class="p2p-label">PEER TO PEER</span></div>
-            <div id="chat-panel" role="tabpanel" aria-labelledby="chat-tab"><div id="messages" class="messages" role="log" aria-live="polite"><div id="chat-empty" class="chat-empty">A shared screen. An open conversation.<br><span>Messages stay in this session.</span></div></div><form id="chat-form" class="chat-form"><input id="chat-input" maxlength="4000" placeholder="Send a message…" aria-label="Chat message" autocomplete="off" disabled><button class="send-button" id="send-chat" aria-label="Send message" disabled>↑</button></form></div>
-            <div id="files-panel" role="tabpanel" aria-labelledby="files-tab" hidden><div class="file-heading"><p>Send a file directly to your peer.<span>Up to 128 MiB per file</span></p><label class="button subtle file-picker">Choose file<input id="file-input" type="file" disabled></label></div><div id="file-list" class="file-list"><p id="file-empty" class="muted">Files you send and receive will appear here.</p></div></div>
+
+          <div class="collaboration-area">
+            <div class="collaboration-tabs" role="tablist" aria-label="Collaboration">
+              <button id="chat-tab" role="tab" aria-selected="true" aria-controls="chat-panel" class="selected">Conversation <span id="chat-count">0</span></button>
+              <button id="files-tab" role="tab" aria-selected="false" aria-controls="files-panel">Files <span id="files-count">0</span></button>
+              <span class="p2p-label">ENCRYPTED P2P</span>
+            </div>
+
+            <div id="chat-panel" role="tabpanel" aria-labelledby="chat-tab">
+              <div id="messages" class="messages" role="log" aria-live="polite">
+                <div id="chat-empty" class="chat-empty">A shared screen. An open conversation.<br><span>Messages stay in this session.</span></div>
+              </div>
+              <form id="chat-form" class="chat-form">
+                <input id="chat-input" maxlength="4000" placeholder="Send a message…" aria-label="Chat message" autocomplete="off" disabled>
+                <button class="send-button" id="send-chat" aria-label="Send message" disabled>↑</button>
+              </form>
+            </div>
+
+            <div id="files-panel" role="tabpanel" aria-labelledby="files-tab" hidden>
+              <div class="file-heading">
+                <p>Send a file directly to your peer.<span>Up to 128 MiB per file</span></p>
+                <label class="button subtle file-picker">Choose file<input id="file-input" type="file" disabled></label>
+              </div>
+              <div id="file-list" class="file-list">
+                <p id="file-empty" class="muted">Files you send and receive will appear here.</p>
+              </div>
+            </div>
           </div>
         </section>
       </div>
-      <footer class="page-footer"><span>WiiUltraConnect <span class="footer-dot">/</span> Bringing your desktops together.</span><span id="session-status" aria-live="polite">Ready to connect</span></footer>
+
+      <footer class="page-footer">
+        <span>WiiUltraConnect <span class="footer-dot">/</span> Bringing your desktops together.</span>
+        <span id="session-status" aria-live="polite">Ready to connect</span>
+      </footer>
     </main>
   </div>
+
   <script type="module" src="app.js"></script>
 </body>
 </html>

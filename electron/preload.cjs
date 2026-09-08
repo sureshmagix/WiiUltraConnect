@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('wii', Object.freeze({
   config: () => ipcRenderer.invoke('app:config'),
+  networkInfo: () => ipcRenderer.invoke('app:networkInfo'),
+  ensureSignalServer: () => ipcRenderer.invoke('app:ensureSignalServer'),
   sources: () => ipcRenderer.invoke('capture:sources'),
   selectSource: id => ipcRenderer.invoke('capture:select', id),
   captureStarted: () => ipcRenderer.invoke('capture:started'),
