@@ -42,6 +42,7 @@
       "electron/**/*",
       "src/**/*",
       "server/**/*",
+      "build/**/*",
       "package.json"
     ],
     "asarUnpack": [
@@ -50,10 +51,11 @@
     ],
     "win": {
       "target": ["nsis", "zip"],
-      "icon": "electron/icon.png"
+      "icon": "build/icon.png"
     },
     "mac": {
       "target": ["dmg", "zip"],
+      "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
       "extendInfo": {
         "NSScreenCaptureUsageDescription": "Share a display with the person you invite to WiiUltraConnect."
@@ -61,6 +63,7 @@
     },
     "linux": {
       "target": ["AppImage", "deb"],
+      "icon": "build/icon.png",
       "category": "Network"
     }
   }

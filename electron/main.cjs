@@ -86,10 +86,19 @@ async function startEmbeddedSignalServer(port = 8787) {
 }
 
 function config() {
-  const signalUrl = process.env.WII_SIGNAL_URL || 'ws://127.0.0.1:8787/signal';
-  const iceServers = process.env.WII_ICE_SERVERS ? JSON.parse(process.env.WII_ICE_SERVERS) : [
+  let signalUrl = 'ws://127.0.0.1:8787/signal';
+  if (process.env.WII_SIGNAL_URL && (process.env.WII_SIGNAL_URL.startsWith('ws://') || process.env.WII_SIGNAL_URL.startsWith('wss://') || process.env.WII_SIGNAL_URL.startsWith('http://') || process.env.WII_SIGNAL_URL.startsWith('https://'))) {
+    signalUrl = process.env.WII_SIGNAL_URL;
+  }
+  let iceServers = [
     { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
   ];
+  if (process.env.WII_ICE_SERVERS) {
+    try {
+      const parsed = JSON.parse(process.env.WII_ICE_SERVERS);
+      if (Array.isArray(parsed)) iceServers = parsed;
+    } catch {}
+  }
   let screenAccess = 'granted';
   try {
     if (process.platform === 'darwin' && systemPreferences.getMediaAccessStatus) {
@@ -204,6 +213,7 @@ app.whenReady().then(async () => {
     win = new BrowserWindow({
       width: 1440, height: 940, minWidth: 1040, minHeight: 740,
       show: process.env.WII_SMOKE !== '1',
+      icon: path.join(__dirname, 'icon.png'),
       title: 'WiiUltraConnect', backgroundColor: '#f5f7fb', autoHideMenuBar: true,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false, webSecurity: true }
     });

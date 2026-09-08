@@ -331,3 +331,35 @@
   border-radius: 50%;
   animation: pulse 1.5s infinite;
 }
+
+/* Logo & Branding */
+.brand-mark {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0;
+  overflow: hidden;
+}
+.brand-logo-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 4px 12px rgba(0, 127, 114, 0.25);
+  transition: transform 0.2s ease;
+}
+.brand-mark:hover .brand-logo-img {
+  transform: scale(1.06);
+}
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.topbar-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  object-fit: cover;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+

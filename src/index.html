@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws: wss: http: https: blob:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'">
   <title>WiiUltraConnect — Screen Sharing, Chat & Remote Control</title>
+  <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="compact.css">
 </head>
 <body>
   <aside class="rail">
     <a class="brand-mark" href="#" aria-label="WiiUltraConnect home">
-      <svg viewBox="0 0 32 32" fill="none"><path d="m5 9 5 15 6-11 6 11 5-15" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="6" r="2" fill="currentColor"/></svg>
+      <img src="icon.png" alt="WiiUltraConnect Logo" class="brand-logo-img">
     </a>
     <div class="rail-item active" title="Connect" aria-label="Connect">
       <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>
@@ -21,9 +22,12 @@
 
   <div class="app-shell">
     <header class="topbar">
-      <div>
-        <span class="wordmark">Wii<span>Ultra</span>Connect</span>
-        <span class="brand-subtitle">DIRECT P2P · LAN & INTERNET / WAN</span>
+      <div class="topbar-brand">
+        <img src="icon.png" alt="Logo" class="topbar-logo">
+        <div>
+          <span class="wordmark">Wii<span>Ultra</span>Connect</span>
+          <span class="brand-subtitle">DIRECT P2P · LAN & INTERNET / WAN</span>
+        </div>
       </div>
       <div class="topbar-right">
         <span class="local-device" id="platform-label">Desktop workspace</span>

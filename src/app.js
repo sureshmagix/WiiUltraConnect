@@ -23,6 +23,13 @@ function status(message) {
   $('session-status').textContent = message;
 }
 
+function getSignalUrl() {
+  const custom = $('signal-url')?.value?.trim();
+  if (custom && (custom.startsWith('ws://') || custom.startsWith('wss://'))) return custom;
+  if (config?.signalUrl && (config.signalUrl.startsWith('ws://') || config.signalUrl.startsWith('wss://'))) return config.signalUrl;
+  return 'ws://127.0.0.1:8787/signal';
+}
+
 function setMode(value) {
   if ((peer && peer.phase === 'connected') || busy) return;
   mode = value;
@@ -284,7 +291,7 @@ async function initHostSession() {
   try {
     await window.wii?.ensureSignalServer().catch(() => {});
     const networkMode = $('network-mode-select')?.value || 'auto';
-    const signalUrl = $('signal-url').value.trim() || 'ws://127.0.0.1:8787/signal';
+    const signalUrl = getSignalUrl();
     const settings = { fps: Number($('fps').value), bitrate: Number($('bitrate').value) };
 
     const session = peer = new PeerSession(config, { files: { accept: acceptFile, onProgress: progress, onFile: receivedFile } });
@@ -390,7 +397,7 @@ async function handleViewerConnect() {
   try {
     await window.wii?.ensureSignalServer().catch(() => {});
     const networkMode = $('network-mode-select')?.value || 'auto';
-    const signalUrl = $('signal-url').value.trim() || 'ws://127.0.0.1:8787/signal';
+    const signalUrl = getSignalUrl();
     const settings = { fps: Number($('fps').value), bitrate: Number($('bitrate').value) };
 
     if (peer) peer.close();
