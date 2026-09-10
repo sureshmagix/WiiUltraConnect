@@ -193,6 +193,7 @@ app.whenReady().then(async () => {
     win = new BrowserWindow({
       width: 1440, height: 960, minWidth: 900, minHeight: 680,
       show: process.env.WII_SMOKE !== '1',
+      icon: path.join(__dirname, 'icon.png'),
       title: 'WiiUltraConnect', backgroundColor: '#f5f7fb', autoHideMenuBar: true,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false, webSecurity: true }
     });

@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src blob:; connect-src blob:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src blob:; connect-src blob:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'">
   <title>WiiUltraConnect Direct — Remote workspace</title>
+  <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="brand-icon">W</span><div><strong>WiiUltra<span>Connect</span></strong><small>DIRECT REMOTE WORKSPACE</small></div></div>
+    <div class="brand"><img src="icon.png" alt="Logo" class="topbar-logo" width="36" height="36" style="border-radius:10px;object-fit:cover;"><div><strong>WiiUltra<span>Connect</span></strong><small>DIRECT REMOTE WORKSPACE</small></div></div>
     <div class="topbar-right"><span id="platform-label">Desktop</span><span id="connection-badge" class="badge"><i></i><span>Ready</span></span></div>
   </header>
   <main>
