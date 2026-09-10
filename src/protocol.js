@@ -30,6 +30,28 @@ export function isPrivateIP(ip) {
          ip.startsWith('fe80:');
 }
 
+// Local interface/candidate diagnostics only: no public-IP lookup service.
+export function addressScope(address) {
+  const ip = String(address || '').toLowerCase().split('%')[0];
+  if (ip.endsWith('.local')) return 'local';
+  if (ip.includes(':')) {
+    if (/^[23][0-9a-f]{0,3}:/.test(ip)) return 'public-ipv6';
+    return 'local';
+  }
+  const parts = ip.split('.');
+  if (parts.length !== 4 || parts.some(n => !/^\d{1,3}$/.test(n) || Number(n) > 255)) return 'unknown';
+  const [a, b, c] = parts.map(Number);
+  if (a === 0 || a === 10 || a === 127 || a >= 224 || a === 169 && b === 254 || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168 || a === 100 && b >= 64 && b <= 127 || a === 192 && b === 0 || a === 198 && [18, 19].includes(b) || a === 198 && b === 51 && c === 100 || a === 203 && b === 0 && c === 113) return 'local';
+  return 'public-ipv4';
+}
+
+export function networkSummary(addresses) {
+  const scopes = addresses.map(addressScope);
+  return scopes.includes('public-ipv6') || scopes.includes('public-ipv4')
+    ? { publicAddress: true, message: 'Public address detected. Direct internet access still depends on routing and firewall rules at both ends.' }
+    : { publicAddress: false, message: 'No public address detected. LAN access may work; direct internet access from unrelated networks is unlikely without a reachable public IPv6 or IPv4 path.' };
+}
+
 export function determineRouteType(candidatePair, localCandidate, remoteCandidate) {
   if (!candidatePair) return 'Direct P2P';
   if (localCandidate?.candidateType === 'relay' || remoteCandidate?.candidateType === 'relay') {

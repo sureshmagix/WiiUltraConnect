@@ -7,6 +7,10 @@ export class ViewerInput {
     this.enabled = false;
     this.abort = new AbortController();
     this.buttons = new Set();
+    this.keys = new Set();
+    this.heartbeat = setInterval(() => {
+      if (this.enabled && document.activeElement === video && (this.keys.size || this.buttons.size)) this.send({ type: 'heartbeat' });
+    }, 1000);
     const listen = (target, name, fn, options = {}) => target.addEventListener(name, fn, { ...options, signal: this.abort.signal });
     const point = event => normalizedPoint(event.clientX, event.clientY, video.getBoundingClientRect(), video.videoWidth, video.videoHeight, this.buttons.size > 0);
     const flush = () => { if (this.move) { this.send(this.move); this.move = null; } };
@@ -24,7 +28,7 @@ export class ViewerInput {
       event.preventDefault();
       video.focus();
       flush();
-      if (action === 'down') { this.buttons.add(event.button); video.setPointerCapture(event.pointerId); }
+      if (action === 'down') { this.buttons.add(event.button); this.pointerId = event.pointerId; video.setPointerCapture(event.pointerId); }
       this.send({ type: 'pointer', action, button: event.button, ...p });
       if (action === 'up') { this.buttons.delete(event.button); if (!this.buttons.size && video.hasPointerCapture(event.pointerId)) video.releasePointerCapture(event.pointerId); }
     });
@@ -41,7 +45,12 @@ export class ViewerInput {
       if (!this.enabled || document.activeElement !== video) return;
       event.preventDefault();
       if (event.code === 'Escape' && (event.ctrlKey || event.metaKey) && event.shiftKey) { this.release(); video.blur(); return; }
-      if (!event.repeat) this.send({ type: 'key', action, code: event.code });
+      // F11 is reserved for the local fullscreen toggle; OS-reserved shortcuts use toolbar buttons.
+      if (event.code === 'F11') return;
+      if (!event.repeat) {
+        if (action === 'down') this.keys.add(event.code); else this.keys.delete(event.code);
+        this.send({ type: 'key', action, code: event.code });
+      }
     });
     listen(video, 'blur', () => this.release());
     listen(window, 'blur', () => this.release());
@@ -52,6 +61,9 @@ export class ViewerInput {
     this.frame = null;
     this.move = null;
     this.buttons.clear();
+    this.keys.clear();
+    if (this.pointerId !== undefined && this.video.hasPointerCapture(this.pointerId)) this.video.releasePointerCapture(this.pointerId);
+    this.pointerId = undefined;
     if (this.enabled) this.send({ type: 'release' });
   }
   setEnabled(enabled) {
@@ -59,5 +71,12 @@ export class ViewerInput {
     this.enabled = enabled;
     this.video.classList.toggle('remote-active', enabled);
   }
-  dispose() { this.setEnabled(false); this.abort.abort(); }
+  shortcut(codes) {
+    if (!this.enabled) return;
+    this.release();
+    for (const code of codes) this.send({ type: 'key', action: 'down', code });
+    for (const code of [...codes].reverse()) this.send({ type: 'key', action: 'up', code });
+    this.video.focus();
+  }
+  dispose() { clearInterval(this.heartbeat); this.setEnabled(false); this.abort.abort(); }
 }

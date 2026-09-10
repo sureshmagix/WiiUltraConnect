@@ -13,6 +13,10 @@ export function directIceConfig() {
     iceTransportPolicy: 'all', bundlePolicy: 'max-bundle'
   };
 }
+
+export function candidateAddresses(sdp) {
+  return [...String(sdp).matchAll(/^a=candidate:\S+\s+\d+\s+\S+\s+\d+\s+(\S+)\s+\d+/gm)].map(match => match[1]);
+}
 export function validatePacket(packet, expectedKind, now = Date.now()) {
   if (!object(packet) || packet.version !== 1 || !['offer', 'answer'].includes(packet.kind) || (expectedKind && packet.kind !== expectedKind)) throw new Error(`Paste a valid ${expectedKind === 'answer' ? 'viewer response' : 'host invitation'} from WiiUltraConnect Direct.`);
   if (typeof packet.sessionId !== 'string' || !UUID.test(packet.sessionId)) throw new Error('Invalid direct session ID.');

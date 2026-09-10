@@ -13,7 +13,7 @@ for (let i = 1; i <= 12; i++) KEY_NAMES[`F${i}`] = `F${i}`;
 
 function validInput(m) {
   if (!m || typeof m !== 'object') return false;
-  if (m.type === 'release') return true;
+  if (m.type === 'release' || m.type === 'heartbeat') return true;
   if (m.type === 'key') return Object.hasOwn(KEY_NAMES, m.code) && ['down', 'up'].includes(m.action);
   if (m.type === 'wheel') return Number.isFinite(m.dy) && Math.abs(m.dy) <= 1200;
   if (m.type !== 'pointer' || !['move', 'down', 'up'].includes(m.action)) return false;
@@ -66,6 +66,7 @@ class InputController {
   }
   enqueue(m) {
     if (!this.enabled || !validInput(m)) return false;
+    if (m.type === 'heartbeat') { this.lastEvent = Date.now(); return true; }
     if (this.pending >= 128) { void this.revoke(); this.onError(new Error('Remote control stopped: input queue overflow.')); return false; }
     const epoch = this.epoch;
     ++this.pending;

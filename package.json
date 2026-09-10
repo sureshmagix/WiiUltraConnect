@@ -1,8 +1,8 @@
 {
   "name": "wiiultraconnect",
   "productName": "WiiUltraConnect",
-  "version": "0.2.1",
-  "description": "Wii Ultra Connect — screen sharing, chat, files, and remote control with instant verbal codes",
+  "version": "0.3.0",
+  "description": "Direct one-to-one remote desktop, fullscreen control, chat, clipboard and files without intermediary services",
   "author": "WiiUltraConnect Team <support@wiiultraconnect.local>",
   "private": true,
   "type": "module",
@@ -11,7 +11,6 @@
   "scripts": {
     "start": "electron .",
     "dev": "node scripts/dev.mjs",
-    "signal": "node server/index.mjs",
     "test": "node --test tests/*.test.mjs",
     "check": "node scripts/check.mjs",
     "smoke": "node scripts/smoke.mjs",
@@ -21,9 +20,6 @@
     "dist:mac:intel": "electron-builder --mac --x64",
     "dist:win": "electron-builder --win --x64",
     "dist:linux": "electron-builder --linux --x64"
-  },
-  "dependencies": {
-    "ws": "8.21.3"
   },
   "optionalDependencies": {
     "@nut-tree-fork/nut-js": "4.2.6"
@@ -41,7 +37,6 @@
     "files": [
       "electron/**/*",
       "src/**/*",
-      "server/**/*",
       "package.json"
     ],
     "asarUnpack": [
@@ -49,8 +44,7 @@
       "**/*.node"
     ],
     "win": {
-      "target": ["nsis", "zip"],
-      "icon": "electron/icon.png"
+      "target": ["nsis", "zip"]
     },
     "mac": {
       "target": ["dmg", "zip"],
