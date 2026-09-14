@@ -3,7 +3,9 @@ const { mkdirSync, writeFileSync } = require('node:fs');
 const { createHash } = require('node:crypto');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const artifacts = path.join(__dirname, '../artifacts/serverless');
+const testTurn = process.env.WII_SMOKE_TURN === '1';
+const testTurnUrl = process.env.WII_SMOKE_TURN_URL;
+const artifacts = path.join(__dirname, testTurn ? '../artifacts/internet' : '../artifacts/serverless');
 mkdirSync(artifacts, { recursive: true });
 app.setPath('userData', path.join(artifacts, 'smoke-profile'));
 // Exercise the real renderer → WebRTC → trusted IPC → InputController boundary,
@@ -40,6 +42,15 @@ async function until(fn, message, timeout = 15_000) {
   throw new Error(message);
 }
 const js = (win, code) => win.webContents.executeJavaScript(code, true);
+async function configureInternet(win) {
+  await js(win, `document.getElementById('connection-mode').value='internet';
+    document.getElementById('connection-mode').dispatchEvent(new Event('change'));
+    document.getElementById('stun-urls').value='';
+    document.getElementById('turn-urls').value=${JSON.stringify(testTurnUrl)};
+    document.getElementById('turn-username').value='smoke-user';
+    document.getElementById('turn-password').value='smoke-password';
+    document.getElementById('relay-only').checked=true;`);
+}
 app.whenReady().then(async () => {
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (details, callback) => {
     serviceRequests.push(details.url); callback({ cancel: true });
@@ -58,23 +69,34 @@ app.whenReady().then(async () => {
   await js(host, "window.WebSocket = class { constructor() { throw new Error('WebSocket forbidden in serverless test'); } }; void 0");
   // Use the actual viewer tab for the screenshot to keep the host display thumbnail out of the artifact.
   await js(host, "document.getElementById('viewer-tab').click()");
+  if (testTurn) await configureInternet(host);
   await js(host, 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
   await new Promise(resolve => setTimeout(resolve, 200)); // Let the tab's 150 ms color transition finish.
   assert.equal(await js(host, "document.getElementById('viewer-tab').getAttribute('aria-selected')"), 'true');
   writeFileSync(path.join(artifacts, 'ui-ready.png'), (await host.webContents.capturePage()).toPNG());
   await js(host, `document.getElementById('host-tab').click(); document.getElementById('fps').value=${JSON.stringify(process.env.WII_SMOKE_FPS || '30')}; document.getElementById('start-host').click()`);
-  await until(() => js(host, "Boolean(document.getElementById('invitation-output').value)"), 'Screen capture or offline invitation failed');
+  try { await until(() => js(host, "Boolean(document.getElementById('invitation-output').value)"), 'Screen capture or offline invitation failed', testTurn ? 50_000 : 15_000); }
+  catch (error) { console.error(await js(host, "({notice:document.getElementById('notice').textContent,status:document.getElementById('session-status').textContent})")); throw error; }
   const capture = await js(host, "document.getElementById('screen-video').srcObject.getVideoTracks()[0].getSettings()");
   assert.ok(capture.width > 0 && capture.height > 0); assert.ok(capture.frameRate <= 60);
   record(`Real desktopCapturer → getDisplayMedia track: ${capture.width}×${capture.height}, ${capture.frameRate} FPS`);
   const invitation = await js(host, "document.getElementById('invitation-output').value");
-  assert.match(invitation, /^WUC-DIRECT-1\./);
+  assert.match(invitation, testTurn ? /^WUC-INTERNET-2\./ : /^WUC-DIRECT-1\./);
+  if (testTurn) assert.equal(await js(host, "document.getElementById('connection-mode').disabled"), true);
   const viewerSession = session.fromPartition('smoke-viewer');
   viewerSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (details, callback) => { serviceRequests.push(details.url); callback({ cancel: true }); });
   const viewer = new BrowserWindow({ show: false, width: 1440, height: 960, webPreferences: { session: viewerSession, preload: path.join(__dirname, 'viewer-smoke-preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
   observe(viewer);
   await viewer.loadFile(path.join(__dirname, '../src/index.html'));
   await until(() => js(viewer, "document.getElementById('platform-label').textContent.includes('Direct')"), 'Viewer did not load');
+  if (testTurn) {
+    await configureInternet(viewer);
+    // Missing relay credentials must leave the UI able to retry.
+    await js(viewer, `document.getElementById('viewer-tab').click();document.getElementById('turn-password').value='';document.getElementById('start-viewer').click()`);
+    await until(() => js(viewer, "!document.getElementById('start-viewer').disabled && document.getElementById('notice').textContent.includes('username and password')"), 'Invalid TURN settings locked viewer setup');
+    await js(viewer, "document.getElementById('turn-password').value='smoke-password'");
+    record('Internet settings validate TURN credentials and allow correction before setup');
+  }
   await js(viewer, `(async()=>{
     const {PeerSession}=await import('../src/peer.js');
     const original=PeerSession.prototype.createResponse;
@@ -89,7 +111,8 @@ app.whenReady().then(async () => {
   })()`);
   await js(viewer, "window.WebSocket = class { constructor() { throw new Error('WebSocket forbidden in serverless test'); } }; void 0");
   await js(viewer, `document.getElementById('invitation-input').value=${JSON.stringify(invitation)};document.getElementById('start-viewer').click()`);
-  await until(() => js(viewer, "Boolean(document.getElementById('response-output').value)"), 'Viewer UI did not generate a response');
+  try { await until(() => js(viewer, "Boolean(document.getElementById('response-output').value)"), 'Viewer UI did not generate a response', testTurn ? 50_000 : 15_000); }
+  catch (error) { console.error(await js(viewer, "({notice:document.getElementById('notice').textContent,status:document.getElementById('session-status').textContent,phase:window.harness?.peer.phase,errors:window.harness?.errors})")); throw error; }
   const response = await js(viewer, "document.getElementById('response-output').value");
   // A malformed response must leave the host invitation usable for a correction.
   await js(host, "document.getElementById('response-input').value='bad-code'; document.getElementById('apply-response').click()");
@@ -99,11 +122,24 @@ app.whenReady().then(async () => {
   await until(() => js(viewer, 'window.harness.peer.ready'), 'WebRTC data channels did not connect');
   await until(() => js(viewer, "document.getElementById('screen-video').videoWidth > 0"), 'Viewer did not decode video');
   const video = await js(viewer, "({width:document.getElementById('screen-video').videoWidth,height:document.getElementById('screen-video').videoHeight})");
-  assert.deepEqual(await js(viewer, 'window.harness.peer.pc.getConfiguration().iceServers'), []);
+  if (testTurn) {
+    assert.equal(await js(viewer, 'window.harness.peer.pc.getConfiguration().iceTransportPolicy'), 'relay');
+    assert.equal(await js(viewer, 'window.harness.peer.pc.getConfiguration().iceServers.length'), 1);
+    const { decodePacket } = await import('../src/direct-signaling.js');
+    for (const code of [invitation, response]) {
+      const packet = JSON.stringify(decodePacket(code));
+      assert.ok(!packet.includes('smoke-password') && !packet.includes('smoke-user'));
+    }
+  } else assert.deepEqual(await js(viewer, 'window.harness.peer.pc.getConfiguration().iceServers'), []);
   const candidateTypes = await js(viewer, "(async()=>{const r=await window.harness.peer.pc.getStats();return [...r.values()].filter(v=>v.type==='local-candidate'||v.type==='remote-candidate').map(v=>v.candidateType)})()");
-  assert.ok(candidateTypes.length >= 2); assert.ok(candidateTypes.every(type => type !== 'relay' && type !== 'srflx'));
+  assert.ok(candidateTypes.length >= 2);
+  assert.ok(candidateTypes.every(type => testTurn ? type === 'relay' : type !== 'relay' && type !== 'srflx'));
   assert.equal(await js(viewer, 'Object.keys(window.harness.peer.channels).length'), 4);
-  record(`Host and viewer app UI, offline exchange, no ICE servers, direct candidate pair, four channels, decoded ${video.width}×${video.height} video`);
+  if (testTurn) {
+    await until(() => js(viewer, "document.getElementById('route-stat').textContent==='TURN Relay'"), 'Relay route not displayed');
+    assert.match(await js(host, "document.getElementById('network-summary').textContent"), /TURN relay address obtained/);
+  }
+  record(`Host and viewer app UI, manual exchange, ${testTurn ? 'authenticated TURN relay candidates only' : 'no ICE servers, direct candidate pair'}, four channels, decoded ${video.width}×${video.height} video`);
   assert.equal(await js(viewer, "window.harness.peer.sendInput({type:'key',action:'down',code:'KeyA'})"), false);
   record('Remote input remains disabled before host approval');
   await js(host, "document.getElementById('chat-input').value='<hello> from host'; document.getElementById('chat-form').requestSubmit()");
@@ -203,12 +239,16 @@ app.whenReady().then(async () => {
   assert.deepEqual(missing, [], 'Key mapping must use real native enum names');
   const point = await native.mouse.getPosition(); assert.ok(Number.isFinite(point.x));
   record('nut.js native binding loads inside Electron and all key mappings resolve (no input injected)');
+  assert.deepEqual(await js(viewer, 'window.harness.errors'), []);
   await js(host, "document.getElementById('disconnect').click()");
   await until(() => js(viewer, 'window.harness.peer.closed'), 'Viewer did not disconnect');
   assert.equal(await js(host, "document.getElementById('screen-video').srcObject"), null);
   assert.equal(await js(host, "document.getElementById('control-button').disabled"), true);
   record('End session stops capture, closes peer channels and disables input');
-  assert.deepEqual(await js(viewer, 'window.harness.errors'), []);
+  // Abrupt remote DTLS/SCTP shutdown can raise a channel error before onclose,
+  // especially through TURN. No errors are allowed before End session above.
+  const shutdownErrors = await js(viewer, 'window.harness.errors');
+  assert.ok(shutdownErrors.length <= 1 && shutdownErrors.every(message => /^The (chat|files|input|session) channel disconnected\. Exchange fresh codes to reconnect\.$/.test(message)));
   assert.deepEqual(errors, []);
   assert.deepEqual(serviceRequests, []);
   record('No HTTP, HTTPS or WebSocket service requests; legacy server settings ignored');

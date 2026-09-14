@@ -1,0 +1,53 @@
+services:
+  signal:
+    build: .
+    restart: unless-stopped
+    environment:
+      PORT: 8787
+      DATA_PATH: /data/devices.json
+    volumes:
+      - signal-data:/data
+    networks: [wuc]
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      WUC_DOMAIN: ${WUC_DOMAIN:?Set WUC_DOMAIN to your DNS name}
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [wuc]
+
+  turn:
+    image: coturn/coturn:4.7.0
+    restart: unless-stopped
+    command:
+      - -n
+      - --log-file=stdout
+      - --realm=${WUC_DOMAIN:?Set WUC_DOMAIN to your DNS name}
+      - --lt-cred-mech
+      - --user=${TURN_USERNAME:?Set TURN_USERNAME}:${TURN_PASSWORD:?Set TURN_PASSWORD}
+      - --fingerprint
+      - --no-multicast-peers
+      - --no-cli
+      - --min-port=49160
+      - --max-port=49200
+      - --external-ip=${PUBLIC_IP:?Set PUBLIC_IP to the Utho public IPv4 address}
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "49160-49200:49160-49200/udp"
+    networks: [wuc]
+
+networks:
+  wuc:
+
+volumes:
+  signal-data:
+  caddy-data:
+  caddy-config:

@@ -1,11 +1,15 @@
 import { PeerSession } from './peer.js';
 import { ViewerInput } from './viewer-input.js';
 import { networkSummary } from './protocol.js';
+import { connectionConfig } from './connection-config.js';
 import { QUALITY, MAX_CLIPBOARD } from './session-messages.js';
+import { BrokerClient } from './broker-client.js';
+import { accessPasswordError, accessVerifier, normalizeBrokerUrl, validDeviceId } from './unattended-access.js';
 
 const $ = id => document.getElementById(id);
 let config, mode = 'host', peer = null, localStream = null, busy = false, operation = 0, sourceList = [], control = false, granting = false;
 let messages = 0, pendingClipboard = '', changingDisplay = false;
+let unattended = { enabled: false }, broker = null, brokerTimer = null, brokerAttempt = null, unattendedHost = false;
 const transfers = new Map(), downloadUrls = new Set();
 const bytes = value => value < 1024 ? value + ' B' : value < 1024 ** 2 ? (value / 1024).toFixed(1) + ' KiB' : (value / 1024 ** 2).toFixed(1) + ' MiB';
 const video = $('screen-video');
@@ -33,9 +37,12 @@ function showTab(value) {
 function refreshUI() {
   const active = Boolean(peer), connected = Boolean(peer?.ready), stream = Boolean(video.srcObject);
   for (const id of ['host-tab', 'viewer-tab', 'start-viewer', 'fps', 'bitrate', 'share-audio', 'invitation-input']) $(id).disabled = active || busy;
+  for (const id of ['connection-mode', 'stun-urls', 'turn-urls', 'turn-username', 'turn-password', 'relay-only']) $(id).disabled = active || busy;
+  for (const id of ['unattended-enabled', 'unattended-server-url', 'unattended-password', 'unattended-password-confirm', 'unattended-login', 'save-unattended', 'unattended-target-id', 'unattended-target-password', 'start-unattended-viewer']) $(id).disabled = active || busy;
   $('share-audio').disabled ||= !config?.systemAudio;
   $('start-host').disabled = active || busy || !sourceList.length;
   $('start-host').textContent = busy && !active ? 'Preparing display…' : active ? 'Session active' : 'Create invitation ↗';
+  $('start-unattended-viewer').textContent = busy && !active ? 'Connecting…' : 'Connect unattended';
   $('apply-response').disabled = busy || peer?.phase !== 'awaiting-answer';
   $('response-input').disabled = busy || peer?.phase !== 'awaiting-answer';
   $('disconnect').disabled = !active && !localStream && !busy;
@@ -71,6 +78,7 @@ async function reset(message = 'Ready to connect') {
   const old = peer; peer = null; old?.close();
   for (const track of localStream?.getTracks() || []) track.stop();
   localStream = null; granting = false; changingDisplay = false;
+  brokerAttempt = null; unattendedHost = false;
   lastControlRequest = 0; lastQualityRequest = 0;
   video.srcObject = null; video.hidden = true; video.muted = true;
   $('audio-toggle').textContent = 'Unmute';
@@ -91,7 +99,7 @@ function displayStream(stream, local) {
   video.srcObject = stream; video.muted = true;
   video.hidden = false; $('screen-empty').hidden = true; $('live-label').hidden = false;
   $('live-label').querySelector('span').textContent = local ? 'YOUR SCREEN' : 'LIVE';
-  void video.play().catch(() => notice('Click the shared desktop to start playback.'));
+  void video.play().catch(() => { if (video.srcObject === stream) notice('Click the shared desktop to start playback.'); });
   refreshUI();
 }
 function addMessage(text, mine) {
@@ -219,8 +227,198 @@ function receivedFile({ id, name, blob }) {
 }
 
 
-function newPeer() {
-  const session = new PeerSession({}, { files: { accept: acceptFile, onProgress: progress, onFile: receivedFile } });
+function connectionSettings() {
+  return { mode: $('connection-mode').value, stunUrls: $('stun-urls').value, turnUrls: $('turn-urls').value,
+    username: $('turn-username').value, credential: $('turn-password').value, relayOnly: $('relay-only').checked };
+}
+function randomValue(bytes = 16) {
+  const values = crypto.getRandomValues(new Uint8Array(bytes));
+  let text = '';
+  for (const value of values) text += String.fromCharCode(value);
+  return btoa(text).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+function useUnattendedNetwork(network) {
+  if (!network || network.mode !== 'internet') return;
+  $('connection-mode').value = 'internet';
+  $('stun-urls').value = network.stunUrls || '';
+  $('turn-urls').value = network.turnUrls || '';
+  $('turn-username').value = network.username || '';
+  $('turn-password').value = network.credential || '';
+  $('relay-only').checked = network.relayOnly === true;
+  updateConnectionMode();
+}
+function clearBroker(reconnect = false) {
+  clearTimeout(brokerTimer); brokerTimer = null;
+  broker?.close(); broker = null;
+  if (reconnect && unattended.enabled) {
+    brokerTimer = setTimeout(() => { void connectBrokerHost(); }, 5_000);
+  }
+}
+function listenBroker(client) {
+  client.addEventListener('message', event => { void onBrokerMessage(event.detail); });
+  client.addEventListener('error', event => notice(event.detail));
+  client.addEventListener('close', () => {
+    if (broker === client) {
+      broker = null;
+      if (!client.closed && unattended.enabled && !peer && !busy) {
+        status('Unattended computer is reconnecting to its signaling server…');
+        brokerTimer = setTimeout(() => { void connectBrokerHost(); }, 5_000);
+      }
+    }
+  });
+}
+async function connectBrokerHost() {
+  if (!unattended.enabled || broker?.socket?.readyState === WebSocket.OPEN) return;
+  clearTimeout(brokerTimer);
+  const client = new BrokerClient(unattended.serverUrl);
+  listenBroker(client);
+  broker = client;
+  try {
+    await client.connect();
+    if (broker !== client || !unattended.enabled) return client.close();
+    client.registerHost(unattended);
+  } catch (error) {
+    if (broker === client) {
+      broker = null;
+      notice(error.message);
+      brokerTimer = setTimeout(() => { void connectBrokerHost(); }, 5_000);
+    }
+  }
+}
+async function ensureViewerBroker(url) {
+  const normalized = normalizeBrokerUrl(url);
+  if (broker?.socket?.readyState === WebSocket.OPEN && broker.url === normalized) return broker;
+  clearBroker(false);
+  const client = new BrokerClient(normalized);
+  listenBroker(client);
+  broker = client;
+  await client.connect();
+  if (unattended.enabled) client.registerHost(unattended);
+  return client;
+}
+async function onBrokerMessage(message) {
+  if (message.type === 'host-registered') {
+    $('unattended-status').textContent = `Online as ${message.deviceId}. This computer is ready for unattended access.`;
+    return;
+  }
+  if (message.type === 'access-request') {
+    if (!unattended.enabled || peer || busy || message.verifier !== unattended.accessVerifier) {
+      try { broker?.decideAccess({ attemptId: message.attemptId, approved: false }); } catch {}
+      return;
+    }
+    await startUnattendedHost(message.attemptId);
+    return;
+  }
+  if (message.type === 'access-pending' && brokerAttempt?.requestId === message.attemptId) {
+    brokerAttempt.attemptId = message.relayAttemptId;
+    status('Access request sent. Waiting for the remote computer…');
+    return;
+  }
+  if (message.type === 'access-approved' && brokerAttempt?.attemptId === message.attemptId) {
+    status('Remote computer approved the encrypted connection. Waiting for its display…');
+    return;
+  }
+  if (message.type === 'signal-offer' && brokerAttempt?.viewer && brokerAttempt.attemptId === message.attemptId) {
+    const session = newPeer(connectionSettings());
+    try {
+      const code = await session.createResponse(message.code);
+      if (peer !== session || !brokerAttempt || brokerAttempt.attemptId !== message.attemptId) return session.close();
+      broker?.sendAnswer({ attemptId: message.attemptId, code });
+    } catch (error) { notice(error.message); await reset('Could not connect unattended'); }
+    return;
+  }
+  if (message.type === 'signal-answer' && brokerAttempt?.host && brokerAttempt.attemptId === message.attemptId && peer?.phase === 'awaiting-answer') {
+    try { await peer.applyResponse(message.code); } catch (error) { notice(error.message); await reset('Could not connect unattended'); }
+    return;
+  }
+  if (['access-denied', 'host-offline', 'access-expired'].includes(message.type) && (brokerAttempt?.attemptId === message.attemptId || brokerAttempt?.requestId === message.attemptId)) {
+    const reason = message.type === 'host-offline' ? 'That computer is offline or unattended access is not enabled.' : message.type === 'access-denied' ? 'The unattended access password was rejected.' : 'The unattended access request expired.';
+    await reset(reason); notice(reason);
+  }
+}
+async function saveUnattended() {
+  const enabled = $('unattended-enabled').checked;
+  if (!enabled) {
+    unattended = await window.wii.saveUnattended({ enabled: false });
+    clearBroker(false);
+    $('unattended-status').textContent = 'Unattended access is off on this computer.';
+    refreshUI(); return;
+  }
+  const serverUrl = normalizeBrokerUrl($('unattended-server-url').value);
+  let deviceId = $('unattended-device-id').value.trim() || `wuc-${randomValue(16).toLowerCase()}`;
+  if (!validDeviceId(deviceId)) throw new Error('The computer ID is invalid.');
+  const password = $('unattended-password').value;
+  const confirmation = $('unattended-password-confirm').value;
+  let verifier = unattended.accessVerifier;
+  if (password || confirmation || !verifier) {
+    const error = accessPasswordError(password);
+    if (error) throw new Error(error);
+    if (password !== confirmation) throw new Error('The unattended-access passwords do not match.');
+    verifier = await accessVerifier(deviceId, password);
+  }
+  const network = connectionSettings();
+  connectionConfig(network);
+  if (network.mode !== 'internet' || !network.turnUrls.trim()) throw new Error('Unattended access requires Internet mode with a configured TURN relay.');
+  unattended = await window.wii.saveUnattended({ enabled: true, serverUrl, deviceId, deviceKey: unattended.deviceKey || randomValue(32), accessVerifier: verifier, displayId: $('display-select').value, network, launchAtLogin: $('unattended-login').checked });
+  $('unattended-device-id').value = unattended.deviceId;
+  $('unattended-password').value = ''; $('unattended-password-confirm').value = '';
+  clearBroker(false); await connectBrokerHost(); refreshUI();
+}
+async function startUnattendedHost(attemptId) {
+  if (!broker || peer || busy) return;
+  if (mode !== 'host') setMode('host');
+  notice(''); busy = true; const current = ++operation; unattendedHost = true; brokerAttempt = { host: true, attemptId }; refreshUI();
+  try {
+    const network = unattended.network;
+    connectionConfig(network);
+    if (!sourceList.length) await refreshSources();
+    const id = sourceList.some(source => source.id === unattended.displayId) ? unattended.displayId : $('display-select').value || sourceList[0]?.id;
+    const settings = { fps: Number($('fps').value), bitrate: Number($('bitrate').value) };
+    const stream = await captureDisplay(id, settings, current);
+    if (!stream || current !== operation) return;
+    localStream = stream; selectedDisplay = id; displayStream(stream, true);
+    const session = newPeer(network);
+    const code = await session.createInvitation(stream, settings);
+    if (current !== operation || peer !== session || !brokerAttempt || brokerAttempt.attemptId !== attemptId) return session.close();
+    broker.decideAccess({ attemptId, approved: true });
+    broker.sendOffer({ attemptId, code });
+    status('Unattended access accepted. Establishing an encrypted connection…');
+  } catch (error) {
+    try { broker?.decideAccess({ attemptId, approved: false }); } catch {}
+    notice(error.message); await reset('Could not start unattended access');
+  } finally { if (current === operation) { busy = false; refreshUI(); } }
+}
+async function startUnattendedViewer() {
+  if (peer || busy) return;
+  notice(''); busy = true; const current = ++operation; refreshUI();
+  try {
+    const network = connectionSettings();
+    connectionConfig(network);
+    if (network.mode !== 'internet' || !network.turnUrls.trim()) throw new Error('Unattended connections require Internet mode with a configured TURN relay.');
+    const deviceId = $('unattended-target-id').value.trim();
+    if (!validDeviceId(deviceId)) throw new Error('Enter the controlled computer ID.');
+    const password = $('unattended-target-password').value;
+    const verifier = await accessVerifier(deviceId, password);
+    const client = await ensureViewerBroker($('unattended-server-url').value);
+    if (current !== operation || broker !== client) return;
+    brokerAttempt = { viewer: true, requestId: crypto.randomUUID(), attemptId: null };
+    client.requestAccess({ deviceId, attemptId: brokerAttempt.requestId, verifier });
+  } catch (error) {
+    if (current === operation) { notice(error.message); await reset('Could not request unattended access'); }
+  } finally { if (current === operation) { busy = false; refreshUI(); } }
+}
+function updateConnectionMode() {
+  const internet = $('connection-mode').value === 'internet';
+  $('internet-settings').hidden = !internet;
+  $('privacy-note').textContent = internet ? '↔ Internet · relay available when configured' : '↔ No intermediary services';
+  $('connection-help').textContent = internet
+    ? 'Choose Internet on both computers. Configure a TURN relay for networks that cannot connect directly.'
+    : 'Direct mode needs a reachable network path. For different internet networks, choose Internet on both computers.';
+  for (const id of ['invitation-input', 'response-input']) $(id).placeholder = internet ? 'WUC-INTERNET-2.…' : 'WUC-DIRECT-1.…';
+  $('platform-label').textContent = ({ win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[config?.platform] || 'Desktop') + (internet ? ' · Internet' : ' · Direct');
+}
+function newPeer(settings = connectionSettings()) {
+  const session = new PeerSession(settings, { files: { accept: acceptFile, onProgress: progress, onFile: receivedFile } });
   peer = session;
   const on = (type, fn) => session.addEventListener(type, event => {
     if (peer !== session) return;
@@ -235,7 +433,10 @@ function newPeer() {
     await window.wii.sessionActive(true);
     refreshUI(); publishDisplays();
   });
-  on('channels', () => { refreshUI(); publishDisplays(); });
+  on('channels', async () => {
+    refreshUI(); publishDisplays();
+    if (mode === 'host' && unattendedHost && session.ready && !control && !granting) await grantControl({ unattended: true });
+  });
   on('stream', stream => displayStream(stream, false));
   on('chat', text => { addMessage(text, false); $('collaboration-area').hidden = false; });
   on('warning', notice);
@@ -285,12 +486,14 @@ async function startHost() {
   if (peer || busy) return;
   notice(''); busy = true; const current = ++operation; refreshUI();
   try {
+    const network = connectionSettings();
+    connectionConfig(network); // Validate before starting screen capture.
     const settings = { fps: Number($('fps').value), bitrate: Number($('bitrate').value) };
     if (!sourceList.length) await refreshSources();
     const stream = await captureDisplay($('display-select').value, settings, current);
     if (!stream) return;
     localStream = stream; selectedDisplay = $('display-select').value; displayStream(stream, true);
-    const session = newPeer();
+    const session = newPeer(network);
     await session.createInvitation(stream, settings);
     if (current !== operation) { session.close(); return; }
   } catch (error) {
@@ -300,8 +503,8 @@ async function startHost() {
 async function startViewer() {
   if (peer || busy) return;
   notice(''); busy = true; const current = ++operation; refreshUI();
-  const session = newPeer();
   try {
+    const session = newPeer();
     await session.createResponse($('invitation-input').value);
     if (current !== operation) session.close();
   } catch (error) {
@@ -337,13 +540,13 @@ async function changeDisplay(id, remote = false) {
     if (peer === session) { notice(error.message); await reset('Display capture could not continue'); }
   } finally { changingDisplay = false; refreshUI(); }
 }
-async function grantControl() {
+async function grantControl(options) {
   if (!peer?.ready || granting || mode !== 'host') return;
   const session = peer; granting = true; refreshUI();
   try {
     if (control) { setControl(false); await window.wii.disableControl(); }
     else {
-      const granted = await window.wii.enableControl();
+      const granted = await window.wii.enableControl(options);
       if (peer === session && session.ready) setControl(granted);
       else await window.wii.disableControl();
     }
@@ -387,7 +590,7 @@ function previewSource() {
 }
 async function checkNetwork() {
   const info = await window.wii.networkInfo();
-  $('network-summary').textContent = networkSummary(info.map(i => i.address)).message;
+  $('network-summary').textContent = networkSummary(info.map(i => i.address)).message + ($('connection-mode').value === 'internet' ? ' STUN/TURN discovery runs when you create an invitation or response.' : '');
   $('network-addresses').textContent = info.map(i => i.family + ' · ' + i.address).join('\n');
 }
 async function copyCode(id) {
@@ -407,10 +610,11 @@ async function toggleFullscreen() {
 function handle(id, fn, event = 'click') {
   $(id).addEventListener(event, e => { Promise.resolve().then(() => fn(e)).catch(error => notice(error.message)); });
 }
-handle('host-tab', () => setMode('host')); handle('viewer-tab', () => setMode('viewer'));
-handle('chat-tab', () => showTab('chat')); handle('files-tab', () => showTab('files'));
-handle('start-host', startHost); handle('start-viewer', startViewer); handle('apply-response', applyResponse);
+  handle('host-tab', () => setMode('host')); handle('viewer-tab', () => setMode('viewer'));
+  handle('chat-tab', () => showTab('chat')); handle('files-tab', () => showTab('files'));
+  handle('start-host', startHost); handle('start-viewer', startViewer); handle('start-unattended-viewer', startUnattendedViewer); handle('save-unattended', saveUnattended); handle('apply-response', applyResponse);
 handle('refresh-displays', refreshSources); handle('refresh-network', checkNetwork);
+handle('connection-mode', () => { updateConnectionMode(); return checkNetwork(); }, 'change');
 handle('display-select', previewSource, 'change'); handle('switch-display', () => changeDisplay($('display-select').value));
 handle('remote-display', () => peer.sendSession({ type: 'display-request', id: $('remote-display').value }), 'change');
 handle('disconnect', () => reset('Session ended')); handle('copy-invitation', () => copyCode('invitation-output'));
@@ -478,17 +682,32 @@ handle('file-input', event => {
 video.addEventListener('click', () => { if (video.paused) void video.play().catch(error => notice(error.message)); });
 window.wii?.onControlRevoked(reason => { setControl(false); if (reason !== 'Remote control stopped') notice(reason); });
 window.wii?.onCaptureEnded(reason => { notice(reason); void reset(reason); });
-window.addEventListener('beforeunload', () => {
-  viewerInput.dispose(); peer?.close(); void window.wii?.stopCapture();
+  window.addEventListener('beforeunload', () => {
+    clearBroker(false);
+    viewerInput.dispose(); peer?.close(); void window.wii?.stopCapture();
   for (const url of downloadUrls) URL.revokeObjectURL(url);
 });
 try {
   if (!window.wii) throw new Error('Open WiiUltraConnect with npm start or the installed desktop app.');
   config = await window.wii.config();
-  $('platform-label').textContent = ({ win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[config.platform] || 'Desktop') + ' · Direct';
+   unattended = await window.wii.unattendedConfig();
+   if (unattended.enabled) {
+     $('unattended-enabled').checked = true;
+     $('unattended-server-url').value = unattended.serverUrl;
+     $('unattended-device-id').value = unattended.deviceId;
+     $('unattended-login').checked = unattended.launchAtLogin === true;
+     useUnattendedNetwork(unattended.network);
+     $('unattended-status').textContent = `Connecting ${unattended.deviceId} to its signaling server…`;
+   }
+   updateConnectionMode();
   $('app-version').textContent = 'v' + config.version;
   if (!config.systemAudio) $('share-audio').checked = false;
   if (config.screenAccess === 'denied') notice('Enable Screen Recording for WiiUltraConnect in System Settings, then restart the app.');
-  await Promise.all([refreshSources(), checkNetwork()]);
+   await Promise.all([refreshSources(), checkNetwork()]);
+   if (unattended.enabled && sourceList.some(source => source.id === unattended.displayId)) {
+     $('display-select').value = unattended.displayId;
+     previewSource();
+   }
+   if (unattended.enabled) void connectBrokerHost();
   refreshUI();
 } catch (error) { notice(error.message); busy = true; refreshUI(); }

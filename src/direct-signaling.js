@@ -1,5 +1,5 @@
 // Offline, non-trickle signaling. No socket, HTTP request or listener is created here.
-const PREFIX = 'WUC-DIRECT-1.';
+const PREFIXES = { 1: 'WUC-DIRECT-1.', 2: 'WUC-INTERNET-2.' };
 const MAX_SDP = 64 * 1024;
 const MAX_CODE = 100 * 1024;
 export const INVITATION_TTL = 10 * 60 * 1000;
@@ -18,13 +18,13 @@ export function candidateAddresses(sdp) {
   return [...String(sdp).matchAll(/^a=candidate:\S+\s+\d+\s+\S+\s+\d+\s+(\S+)\s+\d+/gm)].map(match => match[1]);
 }
 export function validatePacket(packet, expectedKind, now = Date.now()) {
-  if (!object(packet) || packet.version !== 1 || !['offer', 'answer'].includes(packet.kind) || (expectedKind && packet.kind !== expectedKind)) throw new Error(`Paste a valid ${expectedKind === 'answer' ? 'viewer response' : 'host invitation'} from WiiUltraConnect Direct.`);
+  if (!object(packet) || ![1, 2].includes(packet.version) || !['offer', 'answer'].includes(packet.kind) || (expectedKind && packet.kind !== expectedKind)) throw new Error(`Paste a valid ${expectedKind === 'answer' ? 'viewer response' : 'host invitation'} from WiiUltraConnect.`);
   if (typeof packet.sessionId !== 'string' || !UUID.test(packet.sessionId)) throw new Error('Invalid direct session ID.');
   if (!Number.isSafeInteger(packet.issuedAt) || !Number.isSafeInteger(packet.expiresAt) || packet.issuedAt > now + 60_000 || packet.expiresAt <= now || packet.expiresAt <= packet.issuedAt || packet.expiresAt - packet.issuedAt > INVITATION_TTL) throw new Error('The invitation has expired or its clock is invalid. Create a new invitation and check both device clocks.');
   const description = packet.description;
   if (!object(description) || description.type !== packet.kind || typeof description.sdp !== 'string' || description.sdp.length > MAX_SDP || !description.sdp.startsWith('v=0') || !/^a=fingerprint:sha-256 (?:[0-9a-f]{2}:){31}[0-9a-f]{2}\r?$/im.test(description.sdp) || !/^a=ice-ufrag:/m.test(description.sdp) || !/^a=ice-pwd:/m.test(description.sdp)) throw new Error('Invalid or incomplete WebRTC connection description.');
   if (!/^a=candidate:/m.test(description.sdp)) throw new Error('No network addresses were found. Check the network and create a new invitation.');
-  if (/^a=candidate:.*\btyp\s+relay\b/im.test(description.sdp)) throw new Error('Relay candidates are not allowed in the direct version.');
+  if (packet.version === 1 && /^a=candidate:.*\btyp\s+relay\b/im.test(description.sdp)) throw new Error('Relay candidates are not allowed in Direct mode. Select Internet mode on both computers and exchange new codes.');
   if (packet.kind === 'answer' && (typeof packet.offerHash !== 'string' || !/^[0-9a-f]{64}$/.test(packet.offerHash))) throw new Error('The viewer response is missing its invitation fingerprint.');
   return packet;
 }
@@ -33,20 +33,23 @@ export function encodePacket(packet, now = Date.now()) {
   const bytes = new TextEncoder().encode(JSON.stringify(packet));
   let binary = '';
   for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
-  const code = PREFIX + btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+  const code = PREFIXES[packet.version] + btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
   if (code.length > MAX_CODE) throw new Error('Connection code is too large.');
   return code;
 }
 export function decodePacket(code, expectedKind, now = Date.now()) {
   if (typeof code !== 'string' || code.length > MAX_CODE + 1024) throw new Error('Connection code is too large.');
   const compact = code.replace(/\s/g, ''); // Supports wrapped clipboard/email text.
-  if (!compact.startsWith(PREFIX) || compact.length > MAX_CODE || !/^[A-Za-z0-9_-]+$/.test(compact.slice(PREFIX.length))) throw new Error('Paste the complete WiiUltraConnect Direct connection code.');
+  const prefix = Object.values(PREFIXES).find(value => compact.startsWith(value));
+  if (!prefix || compact.length > MAX_CODE || !/^[A-Za-z0-9_-]+$/.test(compact.slice(prefix.length))) throw new Error('Paste the complete WiiUltraConnect connection code.');
   let packet;
   try {
-    const binary = atob(compact.slice(PREFIX.length).replaceAll('-', '+').replaceAll('_', '/'));
+    const binary = atob(compact.slice(prefix.length).replaceAll('-', '+').replaceAll('_', '/'));
     packet = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(binary, c => c.charCodeAt(0))));
   } catch { throw new Error('The connection code is damaged or incomplete. Copy it again.'); }
-  return validatePacket(packet, expectedKind, now);
+  validatePacket(packet, expectedKind, now);
+  if (PREFIXES[packet.version] !== prefix) throw new Error('Connection code mode does not match its contents. Copy the original code again.');
+  return packet;
 }
 export async function offerFingerprint(offer) {
   // Bind the response to the exact session, lifetime and SDP that the host generated.
@@ -57,25 +60,33 @@ export async function offerFingerprint(offer) {
 export async function validateAnswer(answer, offer, now = Date.now()) {
   validatePacket(answer, 'answer', now);
   validatePacket(offer, 'offer', now);
-  if (answer.sessionId !== offer.sessionId || answer.issuedAt !== offer.issuedAt || answer.expiresAt !== offer.expiresAt || answer.offerHash !== await offerFingerprint(offer)) throw new Error('This response belongs to a different invitation. Ask the viewer to use your current invitation.');
+  if (answer.version !== offer.version || answer.sessionId !== offer.sessionId || answer.issuedAt !== offer.issuedAt || answer.expiresAt !== offer.expiresAt || answer.offerHash !== await offerFingerprint(offer)) throw new Error('This response belongs to a different invitation. Ask the viewer to use your current invitation.');
 }
-export function gatherComplete(pc, signal, timeoutMs = 15_000) {
+export function gatherComplete(pc, signal, timeoutMs = 15_000, snapshot = {}) {
   return new Promise((resolve, reject) => {
-    let timer;
+    let timer, snapshotTimer;
     const cleanup = () => {
-      clearTimeout(timer);
+      clearTimeout(timer); clearTimeout(snapshotTimer);
       pc.removeEventListener('icegatheringstatechange', check);
       pc.removeEventListener('connectionstatechange', check);
+      pc.removeEventListener('icecandidate', check);
       signal?.removeEventListener('abort', aborted);
     };
     const finish = error => { cleanup(); error ? reject(error) : resolve(); };
     const aborted = () => finish(new Error('Direct connection setup was cancelled.'));
     const check = () => {
       if (signal?.aborted || pc.connectionState === 'closed') return aborted();
-      if (pc.iceGatheringState === 'complete') finish();
+      if (pc.iceGatheringState === 'complete') return finish();
+      // Non-trickle internet setup can export a usable snapshot while other
+      // interfaces time out. Waiting for every interface can exhaust viewer ICE
+      // checks before the host gets the response. Collect nearby candidates too.
+      if (!snapshotTimer && snapshot.canExport?.(pc.localDescription?.sdp || '')) {
+        snapshotTimer = setTimeout(() => finish(), snapshot.settleMs ?? 1000);
+      }
     };
     pc.addEventListener('icegatheringstatechange', check);
     pc.addEventListener('connectionstatechange', check);
+    pc.addEventListener('icecandidate', check);
     signal?.addEventListener('abort', aborted, { once: true });
     timer = setTimeout(() => finish(new Error('Network address discovery timed out. Check the network and try again.')), timeoutMs);
     check();

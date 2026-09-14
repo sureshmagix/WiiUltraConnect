@@ -66,3 +66,25 @@ test('cancelling, closing or timing out gathering rejects without leaving a pend
   const closing = gatherComplete(pc); pc.connectionState = 'closed'; pc.dispatchEvent(new Event('connectionstatechange'));
   await assert.rejects(closing, /cancelled/);
 });
+
+test('internet gathering exports a usable snapshot before stalled interfaces exhaust connection checks', async () => {
+  const pc = new FakePeer(); pc.localDescription = { sdp: '' };
+  let finished = false;
+  const wait = gatherComplete(pc, undefined, 1000, { canExport: sdp => sdp.includes('typ relay'), settleMs: 5 }).then(() => { finished = true; });
+  pc.localDescription.sdp = 'a=candidate:1 1 udp 1 10.0.0.1 5000 typ host';
+  pc.dispatchEvent(new Event('icecandidate'));
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(finished, false);
+  pc.localDescription.sdp += '\na=candidate:2 1 udp 1 8.8.8.8 5001 typ relay';
+  pc.dispatchEvent(new Event('icecandidate'));
+  await wait;
+  assert.equal(pc.iceGatheringState, 'gathering');
+  assert.equal(finished, true);
+});
+
+test('cancellation still wins while an internet candidate snapshot is settling', async () => {
+  const pc = new FakePeer(), abort = new AbortController();
+  const wait = gatherComplete(pc, abort.signal, 1000, { canExport: () => true, settleMs: 10 });
+  abort.abort();
+  await assert.rejects(wait, /cancelled/);
+});

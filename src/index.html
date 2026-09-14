@@ -3,22 +3,52 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src blob:; connect-src blob:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'">
-  <title>WiiUltraConnect Direct — Remote workspace</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src blob:; connect-src 'self' blob: ws: wss:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'">
+  <title>WiiUltraConnect — Remote workspace</title>
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><img src="icon.png" alt="Logo" class="topbar-logo" width="36" height="36" style="border-radius:10px;object-fit:cover;"><div><strong>WiiUltra<span>Connect</span></strong><small>DIRECT REMOTE WORKSPACE</small></div></div>
+    <div class="brand"><img src="icon.png" alt="Logo" class="topbar-logo" width="36" height="36" style="border-radius:10px;object-fit:cover;"><div><strong>WiiUltra<span>Connect</span></strong><small>REMOTE WORKSPACE</small></div></div>
     <div class="topbar-right"><span id="platform-label">Desktop</span><span id="connection-badge" class="badge"><i></i><span>Ready</span></span></div>
   </header>
   <main>
-    <div class="page-heading"><div><div class="eyebrow">YOUR COMPUTERS. CONNECTED DIRECTLY.</div><h1>A remote desk, within reach.</h1><p>Screen, mouse, keyboard, conversation. One connection between two devices.</p></div><span class="privacy-note">↔ No intermediary services</span></div>
+    <div class="page-heading"><div><div class="eyebrow">YOUR COMPUTERS. CONNECTED.</div><h1>A remote desk, within reach.</h1><p>Screen, mouse, keyboard, conversation. One connection between two devices.</p></div><span id="privacy-note" class="privacy-note">↔ No intermediary services</span></div>
     <div id="notice" class="notice" role="status" hidden></div>
     <div class="workspace-grid">
       <section class="setup-panel card" aria-label="Connection setup">
         <div class="section-label">01 <span>CONNECT YOUR DEVICES</span></div>
+        <label for="connection-mode">Connection network</label>
+        <select id="connection-mode" aria-describedby="connection-help"><option value="direct">Direct · no services</option><option value="internet">Internet · STUN / TURN</option></select>
+        <p id="connection-help" class="small-note">Direct mode needs a reachable network path. For different internet networks, choose Internet on both computers.</p>
+        <details id="internet-settings" hidden>
+          <summary>Internet server settings</summary>
+          <label for="stun-urls">STUN server URLs</label>
+          <input id="stun-urls" value="stun:stun.l.google.com:19302" maxlength="4096" spellcheck="false" autocomplete="off">
+          <p class="small-note">Google STUN is prefilled and can be replaced. It discovers addresses; restrictive NAT/CGNAT can still require a TURN relay.</p>
+          <label for="turn-urls">TURN relay URLs</label>
+          <textarea id="turn-urls" rows="2" maxlength="4096" spellcheck="false" autocomplete="off" placeholder="turn:relay.example.com:3478&#10;turns:relay.example.com:5349?transport=tcp"></textarea>
+          <label for="turn-username">TURN username</label><input id="turn-username" maxlength="512" autocomplete="off" spellcheck="false">
+          <label for="turn-password">TURN password</label><input id="turn-password" type="password" maxlength="2048" autocomplete="off">
+          <label class="check-label"><input id="relay-only" type="checkbox">Use relay only (test TURN access)</label>
+          <p class="small-note">Enter details from your relay provider on both computers. Settings stay in memory for this app window and are not included in connection codes. Servers are contacted when you create an invitation or response.</p>
+        </details>
+        <details id="unattended-settings">
+          <summary>Unattended access</summary>
+          <label class="check-label"><input id="unattended-enabled" type="checkbox">Keep this computer available for password-protected access</label>
+          <label for="unattended-server-url">Signaling server URL</label>
+          <input id="unattended-server-url" maxlength="2048" spellcheck="false" autocomplete="off" placeholder="wss://remote.example.com/ws">
+          <label for="unattended-device-id">This computer ID</label>
+          <input id="unattended-device-id" readonly aria-describedby="unattended-status" placeholder="Created when you save">
+          <label for="unattended-password">Unattended-access password</label>
+          <input id="unattended-password" type="password" maxlength="128" autocomplete="new-password" placeholder="At least 12 characters">
+          <label for="unattended-password-confirm">Confirm password</label>
+          <input id="unattended-password-confirm" type="password" maxlength="128" autocomplete="new-password">
+          <label class="check-label"><input id="unattended-login" type="checkbox">Start WiiUltraConnect when I sign in</label>
+          <button id="save-unattended" class="button subtle full">Save unattended access</button>
+          <p id="unattended-status" class="small-note">Requires Internet mode with a working TURN relay. The access password is never sent to the signaling server.</p>
+        </details>
         <div class="segmented" role="tablist" aria-label="Connection mode">
           <button id="host-tab" role="tab" aria-selected="true" aria-controls="host-panel" class="selected">Share this computer</button>
           <button id="viewer-tab" role="tab" aria-selected="false" aria-controls="viewer-panel">Control a partner</button>
@@ -35,23 +65,30 @@
             <div class="label-row"><label for="invitation-output">1. Send this invitation</label><button id="copy-invitation" class="text-button">Copy invitation</button></div>
             <textarea id="invitation-output" rows="3" readonly aria-label="Host invitation"></textarea>
             <label for="response-input">2. Paste your partner’s response</label><textarea id="response-input" rows="3" maxlength="103424" placeholder="WUC-DIRECT-1.…" spellcheck="false"></textarea>
-            <button id="apply-response" class="button primary full">Connect directly</button>
+            <button id="apply-response" class="button primary full">Connect</button>
             <p class="small-note">Invitations expire after 10 minutes. Exchange codes promptly using a trusted channel.</p>
           </div>
           <button id="switch-display" class="button subtle full" hidden>Share selected display</button>
         </div>
         <div id="viewer-panel" role="tabpanel" aria-labelledby="viewer-tab" hidden>
           <h2>Open a remote workspace</h2><p class="muted">Ask your partner to create an invitation.</p>
+          <div class="help-card" id="unattended-connect">
+            <strong>Access an unattended computer</strong>
+            <label for="unattended-target-id">Computer ID</label><input id="unattended-target-id" maxlength="80" spellcheck="false" autocomplete="off" placeholder="wuc-…">
+            <label for="unattended-target-password">Access password</label><input id="unattended-target-password" type="password" maxlength="128" autocomplete="current-password">
+            <button id="start-unattended-viewer" class="button primary full">Connect unattended</button>
+            <p class="small-note">Use the same signaling server and Internet TURN settings as the controlled computer.</p>
+          </div>
           <label for="invitation-input">1. Paste your partner’s invitation</label><textarea id="invitation-input" rows="5" maxlength="103424" placeholder="WUC-DIRECT-1.…" spellcheck="false"></textarea>
           <button id="start-viewer" class="button primary full">Create response <span>→</span></button>
           <div id="viewer-exchange" class="exchange" hidden>
             <div class="label-row"><label for="response-output">2. Send this response back</label><button id="copy-response" class="text-button">Copy response</button></div>
             <textarea id="response-output" rows="4" readonly aria-label="Viewer response"></textarea>
-            <p class="small-note">The host pastes this response and clicks Connect directly. Both apps must stay open.</p>
+            <p class="small-note">The host pastes this response and clicks Connect. Both apps must stay open.</p>
           </div>
           <div class="help-card"><strong>Control stays with the host.</strong><p>Once connected, request mouse and keyboard access. The host approves it on their own computer.</p></div>
         </div>
-        <details class="network-details" open><summary>Direct connection check</summary><p id="network-summary" class="small-note">Checking local interfaces…</p><button id="refresh-network" class="text-button">Check again</button><div id="network-addresses" class="addresses"></div><p class="small-note">Different internet networks need a reachable public IPv6 or IPv4 path. NAT/CGNAT and firewalls can prevent a direct connection. No STUN, TURN or signaling server is used.</p></details>
+        <details class="network-details" open><summary>Connection check</summary><p id="network-summary" class="small-note">Checking local interfaces…</p><button id="refresh-network" class="text-button">Check local addresses</button><div id="network-addresses" class="addresses"></div><p class="small-note">Local addresses do not prove internet reachability. Direct mode uses no services. Internet mode uses your configured STUN/TURN servers; a relay is used when needed, or when relay-only is selected.</p></details>
         <div class="setup-footer">One host · one viewer · <span id="app-version"></span></div>
       </section>
       <section id="session-panel" class="session-panel card" aria-label="Remote workspace">

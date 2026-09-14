@@ -1,12 +1,15 @@
-const { app, BrowserWindow, desktopCapturer, ipcMain, session, screen, dialog, globalShortcut, systemPreferences, clipboard, powerSaveBlocker } = require('electron');
+const { app, BrowserWindow, desktopCapturer, ipcMain, session, screen, dialog, globalShortcut, systemPreferences, clipboard, powerSaveBlocker, safeStorage } = require('electron');
 const path = require('node:path');
 const os = require('node:os');
 const { pathToFileURL } = require('node:url');
+const { randomBytes } = require('node:crypto');
+const { readFileSync, writeFileSync, mkdirSync, renameSync } = require('node:fs');
 const { InputController } = require('./input-controller.cjs');
 
 app.setName('WiiUltraConnect');
 if (process.env.WII_SMOKE !== '1') app.setPath('userData', path.join(app.getPath('appData'), 'WiiUltraConnect'));
 const page = pathToFileURL(path.join(__dirname, '../src/index.html')).href;
+const unattendedPath = path.join(app.getPath('userData'), 'unattended.json');
 let win;
 let selected = null;
 let capturing = false;
@@ -15,6 +18,51 @@ let grantEpoch = 0;
 let quitting = false;
 let activeSession = false;
 let blocker;
+let unattended = null;
+
+function randomValue(bytes = 32) { return randomBytes(bytes).toString('base64url'); }
+function validateBrokerUrl(value) {
+  let url;
+  try { url = new URL(String(value || '').trim()); } catch { throw new Error('Enter a valid signaling server URL.'); }
+  if (!['ws:', 'wss:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || url.hash) throw new Error('Use a ws:// or wss:// signaling URL without credentials, query parameters or fragments.');
+  if (url.protocol === 'ws:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('Use wss:// for an internet signaling server. ws:// is only allowed for local development.');
+  url.pathname = url.pathname === '/' ? '/ws' : url.pathname.replace(/\/$/, '');
+  if (url.pathname !== '/ws') throw new Error('The signaling server URL must end in /ws.');
+  return url.href;
+}
+function validNetwork(value) {
+  if (!value || value.mode !== 'internet' || typeof value.turnUrls !== 'string' || !value.turnUrls.trim() || typeof value.username !== 'string' || !value.username.trim() || typeof value.credential !== 'string' || !value.credential) throw new Error('Unattended access requires Internet mode and TURN URL, username and password.');
+  return { mode: 'internet', stunUrls: String(value.stunUrls || ''), turnUrls: value.turnUrls, username: value.username, credential: value.credential, relayOnly: value.relayOnly === true };
+}
+function protect(value) {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure desktop storage is unavailable. Enable your operating system keyring before configuring unattended access.');
+  return safeStorage.encryptString(value).toString('base64');
+}
+function reveal(value) {
+  if (!safeStorage.isEncryptionAvailable() || typeof value !== 'string') throw new Error('Saved unattended access settings cannot be decrypted on this computer. Configure them again.');
+  return safeStorage.decryptString(Buffer.from(value, 'base64'));
+}
+function saveUnattended(value) {
+  mkdirSync(path.dirname(unattendedPath), { recursive: true });
+  const temporary = `${unattendedPath}.${process.pid}.tmp`;
+  writeFileSync(temporary, JSON.stringify(value), { mode: 0o600 });
+  renameSync(temporary, unattendedPath);
+}
+function loadUnattended() {
+  try {
+    const value = JSON.parse(readFileSync(unattendedPath, 'utf8'));
+    if (!value || typeof value !== 'object' || value.enabled !== true) return null;
+    return { ...value, deviceKey: reveal(value.deviceKey), accessVerifier: reveal(value.accessVerifier), network: JSON.parse(reveal(value.network)) };
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    console.error('[Main] Could not load unattended settings:', error.message);
+    return null;
+  }
+}
+function publicUnattended() {
+  if (!unattended) return { enabled: false };
+  return { enabled: unattended.enabled === true, serverUrl: unattended.serverUrl, deviceId: unattended.deviceId, deviceKey: unattended.deviceKey, accessVerifier: unattended.accessVerifier, displayId: unattended.displayId || '', network: unattended.network, launchAtLogin: unattended.launchAtLogin === true };
+}
 
 const input = new InputController({
   loadNative: async () => {
@@ -85,7 +133,7 @@ function config() {
     version: app.getVersion(),
     screenAccess,
     systemAudio: process.platform === 'win32',
-    edition: 'Direct · No intermediary services'
+    edition: 'Direct with optional Internet mode'
   };
 }
 
@@ -115,6 +163,26 @@ app.whenReady().then(async () => {
   });
 
   handle('app:config', config);
+  unattended = loadUnattended();
+  handle('unattended:config', publicUnattended);
+  handle('unattended:save', value => {
+    if (!value || typeof value !== 'object') throw new Error('Invalid unattended access settings.');
+    const enabled = value.enabled === true;
+    if (!enabled) {
+      saveUnattended({ enabled: false });
+      unattended = null;
+      try { app.setLoginItemSettings({ openAtLogin: false }); } catch {}
+      return { enabled: false };
+    }
+    const deviceId = typeof value.deviceId === 'string' && /^wuc-[a-z0-9]{20,64}$/.test(value.deviceId) ? value.deviceId : `wuc-${randomBytes(16).toString('hex')}`;
+    const deviceKey = typeof value.deviceKey === 'string' && /^[A-Za-z0-9_-]{32,256}$/.test(value.deviceKey) ? value.deviceKey : randomValue();
+    if (typeof value.accessVerifier !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/.test(value.accessVerifier)) throw new Error('Set an unattended-access password before saving.');
+    const stored = { enabled: true, serverUrl: validateBrokerUrl(value.serverUrl), deviceId, displayId: typeof value.displayId === 'string' ? value.displayId.slice(0, 256) : '', launchAtLogin: value.launchAtLogin === true, deviceKey: protect(deviceKey), accessVerifier: protect(value.accessVerifier), network: protect(JSON.stringify(validNetwork(value.network))) };
+    saveUnattended(stored);
+    unattended = { ...stored, deviceKey, accessVerifier: value.accessVerifier, network: validNetwork(value.network) };
+    try { app.setLoginItemSettings({ openAtLogin: stored.launchAtLogin }); } catch (error) { console.error('[Main] Could not set launch at login:', error.message); }
+    return publicUnattended();
+  });
   handle('app:networkInfo', getNetworkInfo);
   handle('session:active', async value => {
     activeSession = value === true;
@@ -159,20 +227,25 @@ app.whenReady().then(async () => {
 
   handle('capture:stop', stopCapture);
   handle('control:disable', () => revokeControl());
-  handle('control:enable', async () => {
+  handle('control:enable', async options => {
     if (!capturing || !captureGranted || !selected || !activeSession) throw new Error('Connect to a viewer while sharing a display first.');
     const epoch = ++grantEpoch;
     const chosen = selected;
     const display = screen.getAllDisplays().find(d => String(d.id) === chosen.displayId);
     if (!display) throw new Error('The captured display cannot be mapped to desktop coordinates. Control is unavailable for this source.');
     if (process.platform === 'darwin' && !systemPreferences.isTrustedAccessibilityClient(true)) throw new Error('Grant WiiUltraConnect Accessibility permission in System Settings, then try again.');
-    const result = await dialog.showMessageBox(win, {
-      type: 'question', title: 'Allow remote control?',
-      message: 'Allow the connected viewer to use your mouse and keyboard?',
-      detail: 'Keyboard shortcuts can act across your desktop. Press Ctrl/Cmd + Alt + Shift + F12 or Stop control to revoke access.',
-      buttons: ['Cancel', 'Allow control'], defaultId: 0, cancelId: 0, noLink: true
-    });
-    if (result.response !== 1 || epoch !== grantEpoch || !capturing || !activeSession || selected !== chosen) return false;
+    const unattendedControl = options?.unattended === true;
+    if (unattendedControl && unattended?.enabled !== true) throw new Error('Unattended control is not configured on this computer.');
+    if (!unattendedControl) {
+      const result = await dialog.showMessageBox(win, {
+        type: 'question', title: 'Allow remote control?',
+        message: 'Allow the connected viewer to use your mouse and keyboard?',
+        detail: 'Keyboard shortcuts can act across your desktop. Press Ctrl/Cmd + Alt + Shift + F12 or Stop control to revoke access.',
+        buttons: ['Cancel', 'Allow control'], defaultId: 0, cancelId: 0, noLink: true
+      });
+      if (result.response !== 1) return false;
+    }
+    if (epoch !== grantEpoch || !capturing || !activeSession || selected !== chosen) return false;
     await input.grant(display.bounds);
     if (epoch !== grantEpoch || !capturing || !activeSession) { await input.revoke(); return false; }
     const registered = globalShortcut.register('CommandOrControl+Alt+Shift+F12', () => { void revokeControl('Emergency shortcut: remote control stopped'); });

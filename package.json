@@ -1,13 +1,15 @@
 {
   "name": "wiiultraconnect",
   "productName": "WiiUltraConnect",
-  "version": "0.3.0",
-  "description": "Direct one-to-one remote desktop, fullscreen control, chat, clipboard and files without intermediary services",
+  "version": "0.4.0",
+  "description": "One-to-one remote desktop with direct connections and optional STUN/TURN internet support",
   "author": "WiiUltraConnect Team <support@wiiultraconnect.local>",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
-  "engines": { "node": ">=22.14" },
+  "engines": {
+    "node": ">=22.14"
+  },
   "scripts": {
     "start": "electron .",
     "dev": "node scripts/dev.mjs",
@@ -26,7 +28,8 @@
   },
   "devDependencies": {
     "electron": "44.2.0",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "ws": "^8.21.3"
   },
   "build": {
     "appId": "com.wiiultraconnect.desktop",
@@ -45,11 +48,17 @@
       "**/*.node"
     ],
     "win": {
-      "target": ["nsis", "zip"],
+      "target": [
+        "nsis",
+        "zip"
+      ],
       "icon": "build/icon.png"
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
       "extendInfo": {
@@ -57,7 +66,10 @@
       }
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "build/icon.png",
       "category": "Network"
     }

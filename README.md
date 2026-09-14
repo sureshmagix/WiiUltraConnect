@@ -1,22 +1,42 @@
-# WiiUltraConnect 0.3.0
+# WiiUltraConnect 0.4.0
 
-A direct, one-to-one desktop support app for screen sharing, fullscreen mouse/keyboard control, chat, files and clipboard text. No signaling, STUN, TURN, public-IP lookup, account, or relay service is started or contacted by the app. Connection setup uses a host invitation and a viewer response exchanged by the users.
+A one-to-one desktop support app for screen sharing, fullscreen mouse/keyboard control, chat, files and clipboard text. **Direct** mode works without services. **Internet** mode uses a TURN relay for NAT/firewall fallback. A self-hosted signaling service adds password-protected unattended access: a configured computer registers while the app is running, then a trusted operator can connect by computer ID and access password without anyone present at the controlled computer.
 
-## Internet access: the unavoidable network requirement
+## Connect over the internet
+
+The 0.3.0 build deliberately disabled STUN/TURN and could not connect across many home, mobile and CGNAT networks. Changing codes or allowing the app through Windows Firewall does not remove a router's NAT restrictions.
+
+1. Use this updated app on **both computers** and choose **Internet · STUN / TURN** under **Connection network**. Open **Internet server settings**. Allow the app through the Windows Firewall prompt for the network you are using; a new installation or extracted folder can require its own app rule.
+2. Keep the prefilled Google STUN URL or enter your provider's STUN URL. STUN alone can help establish direct paths but does not guarantee connectivity.
+3. For restrictive networks, enter your TURN provider's URL(s), username and password on each computer. Multiple URLs can be separated by spaces, commas or newlines. For example, `turn:relay.example.com:3478?transport=udp` and `turns:relay.example.com:5349?transport=tcp` show the format; **replace these with a real service**. Only use ports and transports supported by that service. TURN over TCP/TLS can help when client UDP access is blocked.
+4. Leave **Use relay only** unchecked for direct-first connectivity with relay fallback. Check it to verify that your TURN service works independently of a direct path.
+5. Create and exchange fresh invitation/response codes using the steps below. The connection check should report **TURN relay address obtained** if relay allocation succeeds. The active route shows **TURN Relay** when relaying.
+
+The app does not use a third-party hosted relay. The included `server/` deployment runs your own signaling service and coturn relay. A valid reachable relay and its credentials are required where direct paths fail. TURN credentials stay out of generated codes. Signaling relays setup messages only; WebRTC encrypts video, audio and data between the endpoints, including relayed traffic. Internet codes start with `WUC-INTERNET-2.` and require the updated app on both ends. Direct codes remain `WUC-DIRECT-1.`.
+
+## Unattended access
+
+On the computer you want to control, choose **Internet · STUN / TURN**, enter the TURN URL, username and password, then open **Unattended access** and save a signaling URL, selected display and an access password of at least 12 characters. The app stores the device key, password verifier and TURN credentials with the operating system's encrypted desktop storage. It can start at sign-in when enabled.
+
+The operator selects **Control a partner**, chooses Internet mode with the same TURN settings, enters the signaling URL, computer ID and password, then chooses **Connect unattended**. The server rate-limits requests and forwards a derived password verifier to the registered computer. The password itself is never stored or sent to the signaling server. A successful verification starts capture and control automatically; the host can always stop it with **Ctrl/Cmd + Alt + Shift + F12**, Stop control or End session.
+
+Unattended access is intentionally limited to a logged-in desktop session where WiiUltraConnect is running. It does not bypass the operating-system login screen, UAC/secure desktop, screen-recording/accessibility permissions, or endpoint protection policies.
+
+## Direct mode network requirement
 
 **Server-free does not mean it can connect through every internet network.** Both computers need a reachable direct network path. A shared LAN can work. Public, routable IPv6 at both ends, or directly assigned public IPv4 with suitable routing and firewall permissions, can also work. Private addresses behind NAT, mobile CGNAT, guest-network isolation, and corporate firewalls can prevent it.
 
 The app checks local interfaces and gathered ICE candidates and reports when no public address is visible. A public address is a possibility, not a reachability certificate. It does not automatically change firewall rules or router settings. WebRTC selects dynamic peer ports; forwarding the old port 8787 does not solve this.
 
-This follows the requested **no intermediary server** constraint. General connectivity between arbitrary networks would require relaxing that constraint; [WebRTC explains the role of TURN](https://webrtc.org/getting-started/turn-server). **Internet operation between two independent networks has not been verified in this workspace.** The machine used here has private IPv4 and link-local IPv6 addresses.
+Direct mode preserves the **no intermediary server** constraint. Internet mode explicitly permits STUN/TURN; [WebRTC explains the role of TURN](https://webrtc.org/getting-started/turn-server). **Internet operation between two independent networks has not been verified in this workspace.** The machine used here has private IPv4 and link-local IPv6 addresses.
 
 ## Connect two computers
 
-1. Open the app on both computers.
+1. Open the app on both computers and choose the same Connection network mode. For Internet mode, configure STUN/TURN as described above.
 2. On the host, choose **Share this computer**, select a display, then **Create invitation**. Windows can optionally share system audio.
 3. Copy the complete invitation and send it privately to your intended partner through a channel you arrange.
 4. The viewer chooses **Control a partner**, pastes the invitation, and clicks **Create response**.
-5. The viewer returns the complete response to the host. The host pastes it and clicks **Connect directly**.
+5. The viewer returns the complete response to the host. The host pastes it and clicks **Connect**.
 6. Once connected, the viewer clicks **Request control**, or the host clicks **Allow control**. The host approves the native permission dialog.
 7. The viewer clicks the remote desktop to focus input. **Fullscreen** or **F11** fills the display while keeping the session toolbar available.
 
@@ -43,7 +63,16 @@ Invitations expire after ten minutes; exchange them promptly, because connectivi
 | Diagnostics | Local address assessment, selected route, resolution, FPS, ICE round-trip time and video Mbps |
 | Interrupted connection | Revoke input immediately, allow 15 seconds for the existing path to recover; fresh codes after terminal failure |
 
-Only one host/viewer pair exists per app instance. Additional instances can establish separate pairs; this is not a multi-viewer room or centralized computer directory. One emergency-stop shortcut must be available for each actively controlled host desktop. There is no unattended service, access to login/UAC secure desktops, remote reboot/reconnect, remote printing, full IME/layout translation, automatic updates, or claim of complete UltraViewer feature parity. [UltraViewer's own feature overview](https://www.ultraviewer.net/en/) includes multi-computer support that differs from this one-to-one design.
+Only one host/viewer pair exists per app instance. Additional instances can establish separate pairs; this is not a multi-viewer room or centralized computer directory. One emergency-stop shortcut must be available for each actively controlled host desktop. There is no access to login/UAC secure desktops, remote reboot/reconnect, remote printing, full IME/layout translation, automatic updates, or claim of complete UltraViewer feature parity. [UltraViewer's own feature overview](https://www.ultraviewer.net/en/) includes multi-computer support that differs from this one-to-one design.
+
+## Deploy your Utho server
+
+1. Point a DNS A record, such as `remote.example.com`, at the Utho public IPv4 address. Open TCP `80`, `443` and `3478`, plus UDP `3478` and UDP `49160-49200` in both the Utho cloud firewall and the server firewall.
+2. Copy `server/.env.example` to `server/.env` on the server. Set `WUC_DOMAIN`, the public `PUBLIC_IP`, and long random `TURN_USERNAME`/`TURN_PASSWORD` values. Do not commit `.env`.
+3. From the `server/` directory, run `docker compose up -d --build`. Caddy obtains and renews the TLS certificate. Confirm `https://your-domain/healthz` responds with `{"ok":true,...}`.
+4. In the app use `wss://your-domain/ws` for Signaling server URL and `turn:your-domain:3478?transport=udp` with the same TURN username/password on both computers. Start with **Use relay only** enabled to verify that the deployed relay is usable, then disable it for direct-first operation.
+
+The server persists only registered computer IDs and hashes of device keys. It neither stores access passwords nor desktop/video/input/file content. Back up the Docker volume named `signal-data`; losing it only requires re-saving unattended access on each controlled computer.
 
 ## Run and build
 
@@ -54,7 +83,7 @@ npm ci
 npm run dev
 ```
 
-`npm start` also launches the app. Old `WII_SIGNAL_URL`, `WII_ICE_SERVERS` and relay environment settings are ignored. There is no signaling-server command.
+`npm start` also launches the app. Old `WII_SIGNAL_URL`, `WII_ICE_SERVERS` and relay environment settings are ignored; use the Internet and unattended settings in the app. The self-hosted signaling service is deployed from `server/`.
 
 ```sh
 npm run check
@@ -64,6 +93,13 @@ npm run smoke -- 60
 npm run pack
 node scripts/verify-package.cjs
 npm run dist:win
+```
+
+An additional integration test runs a temporary, authenticated UDP relay on one local IPv4 interface and forces both peers through it. Its fixture is isolated from app dependencies and is never packaged:
+
+```sh
+npm install --prefix artifacts/turn-test --ignore-scripts node-turn@0.0.6
+node scripts/smoke-turn.mjs
 ```
 
 The Windows unpacked app is `release/win-unpacked/WiiUltraConnect.exe`. Keep the entire folder together. Distribution builds produce an NSIS installer and ZIP. Builds are unsigned; no signing credentials or update service are configured. Other OS targets require their respective build/test environments.

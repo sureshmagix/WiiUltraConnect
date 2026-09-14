@@ -1,11 +1,14 @@
-import { MAX_CHAT_LENGTH, determineRouteType, networkSummary } from './protocol.js';
+import { MAX_CHAT_LENGTH, determineRouteType } from './protocol.js';
 import { FileTransfer } from './file-transfer.js';
-import { directIceConfig, decodePacket, encodePacket, offerFingerprint, validateAnswer, gatherComplete, INVITATION_TTL, candidateAddresses } from './direct-signaling.js';
+import { decodePacket, encodePacket, offerFingerprint, validateAnswer, gatherComplete, INVITATION_TTL } from './direct-signaling.js';
+import { connectionConfig, connectionDiagnostics, connectionFailure, hasTurn } from './connection-config.js';
 import { CHANNELS, validSessionMessage, QUALITY } from './session-messages.js';
 
 export class PeerSession extends EventTarget {
   constructor(config = {}, options = {}) {
     super();
+    this.connectionMode = config.mode ?? 'direct';
+    this.iceConfig = connectionConfig(config);
     this.options = options;
     this.channels = {};
     this.closed = false;
@@ -21,13 +24,13 @@ export class PeerSession extends EventTarget {
     try {
       this.createPeer();
       await this.pc.setLocalDescription(await this.pc.createOffer());
-      await gatherComplete(this.pc, this.setupAbort.signal);
+      await this.gatherAddresses();
       if (this.closed) throw new Error('Connection setup was cancelled.');
       const issuedAt = Date.now();
-      this.offer = { version: 1, kind: 'offer', sessionId: crypto.randomUUID(), issuedAt, expiresAt: issuedAt + INVITATION_TTL, description: this.pc.localDescription.toJSON() };
+      this.offer = { version: this.connectionMode === 'internet' ? 2 : 1, kind: 'offer', sessionId: crypto.randomUUID(), issuedAt, expiresAt: issuedAt + INVITATION_TTL, description: this.pc.localDescription.toJSON() };
       const code = encodePacket(this.offer);
       this.phase = 'awaiting-answer'; this.armExpiry();
-      this.emit('diagnostics', networkSummary(candidateAddresses(this.offer.description.sdp)));
+      this.emit('diagnostics', connectionDiagnostics(this.offer.description.sdp, this.connectionMode, this.iceConfig));
       this.emit('status', 'Send the invitation to your partner, then paste their response.');
       this.emit('invitation', code);
       return code;
@@ -36,18 +39,19 @@ export class PeerSession extends EventTarget {
   async createResponse(invitation) {
     if (this.phase !== 'new' || this.closed) throw new Error('Start a new session first.');
     const offer = decodePacket(invitation, 'offer');
+    if ((offer.version === 2 ? 'internet' : 'direct') !== this.connectionMode) throw new Error(`This invitation uses ${offer.version === 2 ? 'Internet' : 'Direct'} mode. Select that connection mode before creating a response. Both computers must use the same mode.`);
     this.phase = 'gathering'; this.role = 'viewer'; this.settings = {}; this.offer = offer;
     try {
       this.createPeer();
       await this.pc.setRemoteDescription(offer.description);
       await this.pc.setLocalDescription(await this.pc.createAnswer());
-      await gatherComplete(this.pc, this.setupAbort.signal);
+      await this.gatherAddresses();
       const answer = { ...offer, kind: 'answer', offerHash: await offerFingerprint(offer), description: this.pc.localDescription.toJSON() };
       const code = encodePacket(answer);
       if (this.closed) throw new Error('Connection setup was cancelled.');
       // ICE can connect while gathering. Never overwrite an already connected phase.
       if (this.phase !== 'connected') { this.phase = 'awaiting-host'; this.armExpiry(); }
-      this.emit('diagnostics', networkSummary(candidateAddresses(answer.description.sdp)));
+      this.emit('diagnostics', connectionDiagnostics(answer.description.sdp, this.connectionMode, this.iceConfig));
       this.emit('status', 'Return this response to the host promptly to finish connecting.');
       this.emit('response', code);
       return code;
@@ -64,8 +68,8 @@ export class PeerSession extends EventTarget {
       if (this.phase !== 'connected') {
         this.phase = 'connecting';
         clearTimeout(this.expiryTimer);
-        this.connectTimer = setTimeout(() => this.fail(new Error('No direct route reached your partner. Both devices need a reachable network path. NAT/CGNAT and firewalls can block internet access without a relay.')), 30_000);
-        this.emit('status', 'Checking the direct path to your partner…');
+        this.connectTimer = setTimeout(() => this.fail(new Error(this.failureMessage())), this.connectionMode === 'internet' ? 60_000 : 30_000);
+        this.emit('status', 'Checking the connection to your partner…');
       }
     } finally { this.applying = false; }
   }
@@ -73,11 +77,24 @@ export class PeerSession extends EventTarget {
     clearTimeout(this.expiryTimer);
     this.expiryTimer = setTimeout(() => this.fail(new Error('The invitation expired. Create and exchange a fresh invitation and response.')), Math.max(1, this.offer.expiresAt - Date.now()));
   }
+  failureMessage() {
+    return connectionFailure(this.connectionMode, this.iceConfig, this.pc?.localDescription?.sdp, this.pc?.remoteDescription?.sdp);
+  }
+  async gatherAddresses() {
+    const internet = this.connectionMode === 'internet';
+    const usable = hasTurn(this.iceConfig) ? /^a=candidate:.*\btyp\s+relay\b/im : /^a=candidate:.*\btyp\s+srflx\b/im;
+    await gatherComplete(this.pc, this.setupAbort.signal, internet ? 45_000 : 15_000, internet ? { canExport: sdp => usable.test(sdp) } : {});
+    const sdp = this.pc.localDescription?.sdp || '';
+    if (this.connectionMode === 'internet' && !/^a=candidate:/m.test(sdp)) throw new Error(this.failureMessage());
+  }
   createPeer() {
     if (this.pc) return this.pc;
-    // Fixed configuration; environment/config objects cannot insert intermediary services.
-    const pc = this.pc = new RTCPeerConnection(directIceConfig());
-    this.emit('status', 'Gathering direct network addresses…');
+    // Only explicitly selected local settings can configure services; codes never do.
+    const pc = this.pc = new RTCPeerConnection(this.iceConfig);
+    this.emit('status', this.connectionMode === 'internet' ? 'Gathering internet addresses using your STUN/TURN settings…' : 'Gathering direct network addresses…');
+    pc.onicecandidateerror = event => {
+      if (!this.closed && this.phase !== 'connected' && this.connectionMode === 'internet') this.emit('warning', `An ICE server request failed (code ${event.errorCode}). Check the STUN/TURN address, credentials and network access. Other configured paths may still work.`);
+    };
     pc.onconnectionstatechange = () => {
       if (this.closed) return;
       if (pc.connectionState === 'connected') {
@@ -85,16 +102,16 @@ export class PeerSession extends EventTarget {
         this.phase = 'connected';
         clearTimeout(this.expiryTimer); clearTimeout(this.connectTimer); clearTimeout(this.disconnectTimer);
         if (this.role === 'host') void this.tuneVideo().catch(error => this.emit('warning', error.message));
-        this.emit('status', recovering ? 'Connection recovered. The host can enable control again.' : 'Connected directly to your partner.');
+        this.emit('status', recovering ? 'Connection recovered. The host can enable control again.' : 'Connected to your partner.');
         this.emit('connected');
       } else if (pc.connectionState === 'failed') {
-        this.fail(new Error('Direct connection failed. Check public IPv6/IPv4 reachability and firewall rules, then exchange new codes. A server-free connection cannot traverse every NAT/CGNAT network.'));
+        this.fail(new Error(this.failureMessage()));
       } else if (pc.connectionState === 'disconnected') {
         this.phase = 'reconnecting';
         this.setControl(false); this.emit('control-lost');
-        this.emit('status', 'Connection interrupted. Waiting up to 15 seconds for the direct path…');
+        this.emit('status', 'Connection interrupted. Waiting up to 15 seconds for the path to recover…');
         clearTimeout(this.disconnectTimer);
-        this.disconnectTimer = setTimeout(() => this.fail(new Error('The direct connection was lost. Exchange new codes to reconnect.')), 15_000);
+        this.disconnectTimer = setTimeout(() => this.fail(new Error('The connection was lost. Exchange new codes to reconnect.')), 15_000);
       }
     };
     pc.ontrack = event => {
