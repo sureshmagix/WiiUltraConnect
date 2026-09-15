@@ -4,120 +4,124 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src blob:; connect-src 'self' blob: ws: wss:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'">
-  <title>WiiUltraConnect — Remote workspace</title>
+  <title>WiiUltraConnect</title>
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><img src="icon.png" alt="Logo" class="topbar-logo" width="36" height="36" style="border-radius:10px;object-fit:cover;"><div><strong>WiiUltra<span>Connect</span></strong><small>REMOTE WORKSPACE</small></div></div>
-    <div class="topbar-right"><span id="platform-label">Desktop</span><span id="connection-badge" class="badge"><i></i><span>Ready</span></span></div>
+    <div class="brand"><img src="icon.png" alt="WiiUltraConnect" class="topbar-logo" width="36" height="36"><div><strong>WiiUltra<span>Connect</span></strong><small>REMOTE ACCESS</small></div></div>
+    <div class="topbar-right"><span id="platform-label">Windows</span><span id="connection-badge" class="badge"><i></i><span>Ready</span></span></div>
   </header>
   <main>
-    <div class="page-heading"><div><div class="eyebrow">YOUR COMPUTERS. CONNECTED.</div><h1>A remote desk, within reach.</h1><p>Screen, mouse, keyboard, conversation. One connection between two devices.</p></div><span id="privacy-note" class="privacy-note">↔ No intermediary services</span></div>
     <div id="notice" class="notice" role="status" hidden></div>
-    <div class="workspace-grid">
-      <section class="setup-panel card" aria-label="Connection setup">
-        <div class="section-label">01 <span>CONNECT YOUR DEVICES</span></div>
-        <label for="connection-mode">Connection network</label>
-        <select id="connection-mode" aria-describedby="connection-help"><option value="direct">Direct · no services</option><option value="internet">Internet · STUN / TURN</option></select>
-        <p id="connection-help" class="small-note">Direct mode needs a reachable network path. For different internet networks, choose Internet on both computers.</p>
-        <details id="internet-settings" hidden>
-          <summary>Internet server settings</summary>
-          <label for="stun-urls">STUN server URLs</label>
-          <input id="stun-urls" value="stun:stun.l.google.com:19302" maxlength="4096" spellcheck="false" autocomplete="off">
-          <p class="small-note">Google STUN is prefilled and can be replaced. It discovers addresses; restrictive NAT/CGNAT can still require a TURN relay.</p>
-          <label for="turn-urls">TURN relay URLs</label>
-          <textarea id="turn-urls" rows="2" maxlength="4096" spellcheck="false" autocomplete="off" placeholder="turn:relay.example.com:3478&#10;turns:relay.example.com:5349?transport=tcp"></textarea>
-          <label for="turn-username">TURN username</label><input id="turn-username" maxlength="512" autocomplete="off" spellcheck="false">
-          <label for="turn-password">TURN password</label><input id="turn-password" type="password" maxlength="2048" autocomplete="off">
-          <label class="check-label"><input id="relay-only" type="checkbox">Use relay only (test TURN access)</label>
-          <p class="small-note">Enter details from your relay provider on both computers. Settings stay in memory for this app window and are not included in connection codes. Servers are contacted when you create an invitation or response.</p>
-        </details>
-        <details id="unattended-settings">
-          <summary>Unattended access</summary>
-          <label class="check-label"><input id="unattended-enabled" type="checkbox">Keep this computer available for password-protected access</label>
-          <label for="unattended-server-url">Signaling server URL</label>
-          <input id="unattended-server-url" maxlength="2048" spellcheck="false" autocomplete="off" placeholder="wss://remote.example.com/ws">
-          <label for="unattended-device-id">This computer ID</label>
-          <input id="unattended-device-id" readonly aria-describedby="unattended-status" placeholder="Created when you save">
-          <label for="unattended-password">Unattended-access password</label>
+    <span id="privacy-note" hidden></span>
+    <div class="workspace-grid simple-layout">
+      <aside class="setup-panel card" aria-label="Remote access setup">
+        <section class="quick-section">
+          <div class="section-label">CONNECT</div>
+          <h1>Control a computer</h1>
+          <p class="muted">Enter the remote username and access password.</p>
+          <label for="unattended-target-id">Username</label>
+          <input id="unattended-target-id" maxlength="64" spellcheck="false" autocomplete="username" placeholder="office-pc">
+          <label for="unattended-target-password">Password</label>
+          <input id="unattended-target-password" type="password" maxlength="128" autocomplete="current-password" placeholder="Access password">
+          <button id="start-unattended-viewer" class="button primary full">Connect</button>
+        </section>
+
+        <section class="quick-section local-section">
+          <div class="section-label">THIS COMPUTER</div>
+          <h2>Unattended access</h2>
+          <p class="muted">Set this once so you can connect when nobody is here.</p>
+          <label for="unattended-username">Your username</label>
+          <input id="unattended-username" maxlength="64" spellcheck="false" autocomplete="username" placeholder="office-pc">
+          <label for="unattended-password">Set access password</label>
           <input id="unattended-password" type="password" maxlength="128" autocomplete="new-password" placeholder="At least 12 characters">
           <label for="unattended-password-confirm">Confirm password</label>
-          <input id="unattended-password-confirm" type="password" maxlength="128" autocomplete="new-password">
-          <label class="check-label"><input id="unattended-login" type="checkbox">Start WiiUltraConnect when I sign in</label>
-          <button id="save-unattended" class="button subtle full">Save unattended access</button>
-          <p id="unattended-status" class="small-note">Requires Internet mode with a working TURN relay. The access password is never sent to the signaling server.</p>
+          <input id="unattended-password-confirm" type="password" maxlength="128" autocomplete="new-password" placeholder="Repeat password">
+          <label class="check-label"><input id="unattended-enabled" type="checkbox">Enable unattended access</label>
+          <label class="check-label"><input id="unattended-login" type="checkbox">Start with Windows</label>
+          <button id="save-unattended" class="button subtle full">Save this computer</button>
+          <p id="unattended-status" class="small-note">Configure the server once in Advanced.</p>
+        </section>
+
+        <details class="advanced-settings">
+          <summary>Advanced</summary>
+          <div class="advanced-content">
+            <label for="unattended-server-url">Server URL</label>
+            <input id="unattended-server-url" maxlength="2048" spellcheck="false" autocomplete="off" placeholder="wss://remote.example.com/ws">
+            <label for="connection-mode">Connection</label>
+            <select id="connection-mode" aria-describedby="connection-help"><option value="direct">Direct network only</option><option value="internet">Internet (recommended)</option></select>
+            <p id="connection-help" class="small-note">Internet mode needs your TURN relay settings below.</p>
+            <details id="internet-settings" open>
+              <summary>Relay settings</summary>
+              <label for="stun-urls">STUN URL</label>
+              <input id="stun-urls" value="stun:stun.l.google.com:19302" maxlength="4096" spellcheck="false" autocomplete="off">
+              <label for="turn-urls">TURN URL</label>
+              <textarea id="turn-urls" rows="2" maxlength="4096" spellcheck="false" placeholder="turn:remote.example.com:3478?transport=udp"></textarea>
+              <label for="turn-username">TURN username</label>
+              <input id="turn-username" maxlength="512" autocomplete="off" spellcheck="false">
+              <label for="turn-password">TURN password</label>
+              <input id="turn-password" type="password" maxlength="2048" autocomplete="off">
+              <label class="check-label"><input id="relay-only" type="checkbox">Always use relay</label>
+            </details>
+            <div class="manual-divider">Manual connection</div>
+            <div class="segmented" role="tablist" aria-label="Manual connection mode">
+              <button id="host-tab" role="tab" aria-selected="true" aria-controls="host-panel" class="selected">Share</button>
+              <button id="viewer-tab" role="tab" aria-selected="false" aria-controls="viewer-panel">Join</button>
+            </div>
+            <div id="host-panel" role="tabpanel" aria-labelledby="host-tab">
+              <label for="display-select">Display</label>
+              <select id="display-select"><option value="">Loading displays...</option></select>
+              <div class="label-row"><button id="refresh-displays" class="text-button">Refresh displays</button><button id="switch-display" class="text-button" hidden>Share selected display</button></div>
+              <div class="source-preview"><img id="source-image" alt="Selected display preview" hidden><span id="source-placeholder">No display selected</span></div>
+              <div class="settings-grid"><div><label for="fps">Frame rate</label><select id="fps"><option value="30">30 FPS</option><option value="60">60 FPS</option></select></div><div><label for="bitrate">Video quality</label><select id="bitrate"><option value="2">Economy</option><option value="4" selected>Balanced</option><option value="8">Smooth</option></select></div></div>
+              <label class="check-label"><input id="share-audio" type="checkbox">Share system audio <span id="audio-platform"></span></label>
+              <button id="start-host" class="button subtle full">Create invitation</button>
+              <div id="host-exchange" class="exchange" hidden>
+                <div class="label-row"><label for="invitation-output">Invitation</label><button id="copy-invitation" class="text-button">Copy</button></div>
+                <textarea id="invitation-output" rows="3" readonly aria-label="Host invitation"></textarea>
+                <label for="response-input">Response</label><textarea id="response-input" rows="3" maxlength="103424" placeholder="Paste response" spellcheck="false"></textarea>
+                <button id="apply-response" class="button subtle full">Connect invitation</button>
+              </div>
+            </div>
+            <div id="viewer-panel" role="tabpanel" aria-labelledby="viewer-tab" hidden>
+              <label for="invitation-input">Invitation</label><textarea id="invitation-input" rows="4" maxlength="103424" placeholder="Paste invitation" spellcheck="false"></textarea>
+              <button id="start-viewer" class="button subtle full">Create response</button>
+              <div id="viewer-exchange" class="exchange" hidden>
+                <div class="label-row"><label for="response-output">Response</label><button id="copy-response" class="text-button">Copy</button></div>
+                <textarea id="response-output" rows="4" readonly aria-label="Viewer response"></textarea>
+              </div>
+            </div>
+            <details class="network-details"><summary>Network check</summary><p id="network-summary" class="small-note">Checking local interfaces...</p><button id="refresh-network" class="text-button">Check addresses</button><div id="network-addresses" class="addresses"></div></details>
+          </div>
         </details>
-        <div class="segmented" role="tablist" aria-label="Connection mode">
-          <button id="host-tab" role="tab" aria-selected="true" aria-controls="host-panel" class="selected">Share this computer</button>
-          <button id="viewer-tab" role="tab" aria-selected="false" aria-controls="viewer-panel">Control a partner</button>
-        </div>
-        <div id="host-panel" role="tabpanel" aria-labelledby="host-tab">
-          <h2>Invite your partner</h2><p class="muted">Choose a display, then share an invitation.</p>
-          <div class="label-row"><label for="display-select">Display to share</label><button id="refresh-displays" class="text-button">Refresh</button></div>
-          <select id="display-select"><option value="">Loading displays…</option></select>
-          <div class="source-preview"><img id="source-image" alt="Selected display preview" hidden><span id="source-placeholder">No display selected</span><span class="preview-label">LOCAL PREVIEW</span></div>
-          <div class="settings-grid"><div><label for="fps">Frame rate</label><select id="fps"><option value="30">30 FPS</option><option value="60">60 FPS</option></select></div><div><label for="bitrate">Video budget</label><select id="bitrate"><option value="2">2 Mbps</option><option value="4" selected>4 Mbps</option><option value="8">8 Mbps</option></select></div></div>
-          <label class="check-label"><input id="share-audio" type="checkbox">Share system audio <span id="audio-platform">(Windows)</span></label>
-          <button id="start-host" class="button primary full">Create invitation <span>↗</span></button>
-          <div id="host-exchange" class="exchange" hidden>
-            <div class="label-row"><label for="invitation-output">1. Send this invitation</label><button id="copy-invitation" class="text-button">Copy invitation</button></div>
-            <textarea id="invitation-output" rows="3" readonly aria-label="Host invitation"></textarea>
-            <label for="response-input">2. Paste your partner’s response</label><textarea id="response-input" rows="3" maxlength="103424" placeholder="WUC-DIRECT-1.…" spellcheck="false"></textarea>
-            <button id="apply-response" class="button primary full">Connect</button>
-            <p class="small-note">Invitations expire after 10 minutes. Exchange codes promptly using a trusted channel.</p>
-          </div>
-          <button id="switch-display" class="button subtle full" hidden>Share selected display</button>
-        </div>
-        <div id="viewer-panel" role="tabpanel" aria-labelledby="viewer-tab" hidden>
-          <h2>Open a remote workspace</h2><p class="muted">Ask your partner to create an invitation.</p>
-          <div class="help-card" id="unattended-connect">
-            <strong>Access an unattended computer</strong>
-            <label for="unattended-target-id">Computer ID</label><input id="unattended-target-id" maxlength="80" spellcheck="false" autocomplete="off" placeholder="wuc-…">
-            <label for="unattended-target-password">Access password</label><input id="unattended-target-password" type="password" maxlength="128" autocomplete="current-password">
-            <button id="start-unattended-viewer" class="button primary full">Connect unattended</button>
-            <p class="small-note">Use the same signaling server and Internet TURN settings as the controlled computer.</p>
-          </div>
-          <label for="invitation-input">1. Paste your partner’s invitation</label><textarea id="invitation-input" rows="5" maxlength="103424" placeholder="WUC-DIRECT-1.…" spellcheck="false"></textarea>
-          <button id="start-viewer" class="button primary full">Create response <span>→</span></button>
-          <div id="viewer-exchange" class="exchange" hidden>
-            <div class="label-row"><label for="response-output">2. Send this response back</label><button id="copy-response" class="text-button">Copy response</button></div>
-            <textarea id="response-output" rows="4" readonly aria-label="Viewer response"></textarea>
-            <p class="small-note">The host pastes this response and clicks Connect. Both apps must stay open.</p>
-          </div>
-          <div class="help-card"><strong>Control stays with the host.</strong><p>Once connected, request mouse and keyboard access. The host approves it on their own computer.</p></div>
-        </div>
-        <details class="network-details" open><summary>Connection check</summary><p id="network-summary" class="small-note">Checking local interfaces…</p><button id="refresh-network" class="text-button">Check local addresses</button><div id="network-addresses" class="addresses"></div><p class="small-note">Local addresses do not prove internet reachability. Direct mode uses no services. Internet mode uses your configured STUN/TURN servers; a relay is used when needed, or when relay-only is selected.</p></details>
-        <div class="setup-footer">One host · one viewer · <span id="app-version"></span></div>
-      </section>
-      <section id="session-panel" class="session-panel card" aria-label="Remote workspace">
-        <div class="session-heading"><div><div class="section-label">02 <span>REMOTE WORKSPACE</span></div><h2 id="session-title">Ready when you are</h2></div><span id="session-id" class="session-id"></span></div>
-        <div class="workspace-toolbar" aria-label="Remote workspace controls">
+        <div class="setup-footer">WiiUltraConnect <span id="app-version"></span></div>
+      </aside>
+
+      <section id="session-panel" class="session-panel card" aria-label="Remote desktop">
+        <div class="session-heading"><div><div class="section-label">REMOTE DESKTOP</div><h2 id="session-title">Ready to connect</h2></div><span id="session-id" class="session-id"></span></div>
+        <div class="workspace-toolbar" aria-label="Remote desktop controls">
           <button id="control-button" class="button subtle" disabled>Allow control</button>
           <select id="remote-display" aria-label="Remote display" title="Request another display" hidden disabled><option>Display</option></select>
-          <select id="quality" aria-label="Video quality" disabled><option value="custom" disabled>Host settings</option><option value="economy">Economy · 15 FPS</option><option value="balanced" selected>Balanced · 30 FPS</option><option value="smooth">Smooth · 60 FPS</option></select>
-          <select id="view-scale" aria-label="View scale" disabled><option value="fit">Fit to window</option><option value="actual">Actual size</option></select>
-          <select id="shortcut" aria-label="Send remote shortcut" disabled><option value="">Send shortcut…</option><option value="desktop">Win+D · Desktop</option><option value="switch">Alt+Tab · Switch app</option><option value="files">Win+E · Files</option><option value="escape">Escape</option></select>
-          <button id="fullscreen" class="button subtle" title="Fullscreen (F11)" disabled>⛶ Fullscreen</button>
-          <button id="disconnect" class="button danger" disabled>End session</button>
+          <select id="quality" aria-label="Video quality" disabled><option value="custom" disabled>Host settings</option><option value="economy">Economy</option><option value="balanced" selected>Balanced</option><option value="smooth">Smooth</option></select>
+          <select id="view-scale" aria-label="View scale" disabled><option value="fit">Fit</option><option value="actual">Actual size</option></select>
+          <select id="shortcut" aria-label="Send remote shortcut" disabled><option value="">Shortcut</option><option value="desktop">Win+D</option><option value="switch">Alt+Tab</option><option value="files">Win+E</option><option value="escape">Escape</option></select>
+          <button id="fullscreen" class="button subtle" title="Fullscreen (F11)" disabled>Fullscreen</button>
+          <button id="disconnect" class="button danger" disabled>End</button>
         </div>
-        <div id="screen-stage" class="screen-stage">
-          <div id="video-surface" class="video-surface"><video id="screen-video" autoplay playsinline muted tabindex="0" aria-label="Shared desktop. Click to focus remote input after host approval." hidden></video></div>
-          <div id="screen-empty" class="screen-empty"><div class="desktop-symbol">↔</div><h3>Your next workspace starts here.</h3><p>Share an invitation or connect to a partner.<br>Your shared desktop will appear in this space.</p><div class="empty-tags">Screen sharing <span>·</span> Remote control <span>·</span> Chat & files</div></div>
-          <span id="live-label" class="live-label" hidden><i></i><span>LIVE</span></span>
-        </div>
-        <div class="screen-toolbar"><div class="stats"><span id="route-stat">No active connection</span><span id="fps-stat">— FPS</span><span id="rtt-stat">— ms</span><span id="resolution-stat"></span><span id="bandwidth-stat"></span></div><div class="mini-actions"><button id="audio-toggle" class="text-button" disabled>Unmute</button><button id="screenshot" class="text-button" disabled>Screenshot</button><button id="send-clipboard" class="text-button" disabled>Send clipboard</button><button id="toggle-tools" class="text-button">Chat & files</button></div></div>
+        <div id="screen-stage" class="screen-stage"><div id="video-surface" class="video-surface"><video id="screen-video" autoplay playsinline muted tabindex="0" aria-label="Shared desktop. Click to focus remote input after host approval." hidden></video></div><div id="screen-empty" class="screen-empty"><div class="desktop-symbol">+</div><h3>Ready for a remote desktop</h3><p>Connect using a username and password.</p></div><span id="live-label" class="live-label" hidden><i></i><span>LIVE</span></span></div>
+        <div class="screen-toolbar"><div class="stats"><span id="route-stat">No active connection</span><span id="fps-stat">- FPS</span><span id="rtt-stat">- ms</span><span id="resolution-stat"></span><span id="bandwidth-stat"></span></div><div class="mini-actions"><button id="audio-toggle" class="text-button" disabled>Unmute</button><button id="screenshot" class="text-button" disabled>Screenshot</button><button id="send-clipboard" class="text-button" disabled>Clipboard</button><button id="toggle-tools" class="text-button">Chat and files</button></div></div>
         <div id="control-hint" class="control-hint" hidden></div>
-        <div id="clipboard-incoming" class="clipboard-incoming" hidden><strong>Your partner sent clipboard text</strong><pre id="clipboard-preview"></pre><button id="accept-clipboard" class="button subtle">Copy to my clipboard</button><button id="dismiss-clipboard" class="text-button">Dismiss</button></div>
+        <div id="clipboard-incoming" class="clipboard-incoming" hidden><strong>Your partner sent clipboard text</strong><pre id="clipboard-preview"></pre><button id="accept-clipboard" class="button subtle">Copy</button><button id="dismiss-clipboard" class="text-button">Dismiss</button></div>
         <div id="collaboration-area" class="collaboration-area">
-          <div class="collaboration-tabs" role="tablist" aria-label="Collaboration"><button id="chat-tab" role="tab" aria-selected="true" aria-controls="chat-panel" class="selected">Conversation <span id="chat-count">0</span></button><button id="files-tab" role="tab" aria-selected="false" aria-controls="files-panel">Files <span id="files-count">0</span></button><span class="p2p-label">ENCRYPTED DEVICE TO DEVICE</span></div>
-          <div id="chat-panel" role="tabpanel" aria-labelledby="chat-tab"><div id="messages" class="messages" role="log" aria-live="polite"><div id="chat-empty" class="chat-empty">An open screen. An open conversation.<br><span>Messages stay in this app session.</span></div></div><form id="chat-form" class="chat-form"><input id="chat-input" maxlength="4000" placeholder="Send a message…" aria-label="Chat message" autocomplete="off" disabled><button id="send-chat" class="send-button" aria-label="Send message" disabled>↑</button></form></div>
-          <div id="files-panel" role="tabpanel" aria-labelledby="files-tab" hidden><div class="file-heading"><p>Share a file with your partner.<span>Up to 128 MiB · recipient accepts before transfer</span></p><label class="button subtle file-picker">Choose file<input id="file-input" type="file" disabled></label></div><div id="file-list" class="file-list"><p id="file-empty" class="muted">Sent and received files appear here.</p></div></div>
+          <div class="collaboration-tabs" role="tablist" aria-label="Collaboration"><button id="chat-tab" role="tab" aria-selected="true" aria-controls="chat-panel" class="selected">Chat <span id="chat-count">0</span></button><button id="files-tab" role="tab" aria-selected="false" aria-controls="files-panel">Files <span id="files-count">0</span></button><span class="p2p-label">ENCRYPTED</span></div>
+          <div id="chat-panel" role="tabpanel" aria-labelledby="chat-tab"><div id="messages" class="messages" role="log" aria-live="polite"><div id="chat-empty" class="chat-empty">Messages appear here.</div></div><form id="chat-form" class="chat-form"><input id="chat-input" maxlength="4000" placeholder="Message" aria-label="Chat message" autocomplete="off" disabled><button id="send-chat" class="send-button" aria-label="Send message" disabled>Send</button></form></div>
+          <div id="files-panel" role="tabpanel" aria-labelledby="files-tab" hidden><div class="file-heading"><p>Share a file.<span>Up to 128 MiB. The recipient must accept.</span></p><label class="button subtle file-picker">Choose file<input id="file-input" type="file" disabled></label></div><div id="file-list" class="file-list"><p id="file-empty" class="muted">No files yet.</p></div></div>
         </div>
       </section>
     </div>
-    <footer><span>WiiUltraConnect <span class="footer-dot">/</span> Your workspace, connected.</span><span id="session-status" aria-live="polite">Ready to connect</span></footer>
+    <footer><span>WiiUltraConnect</span><span id="session-status" aria-live="polite">Ready</span></footer>
   </main>
   <script type="module" src="app.js"></script>
 </body>

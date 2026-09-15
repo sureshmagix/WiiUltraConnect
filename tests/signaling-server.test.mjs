@@ -36,13 +36,13 @@ test('server authenticates a registered host and relays only its approved signal
   const url = `ws://127.0.0.1:${port}/ws`;
   const host = await connect(url), viewer = await connect(url);
   t.after(() => { host.close(); viewer.close(); });
-  const deviceId = 'wuc-0123456789abcdef0123456789abcdef', deviceKey = 'a'.repeat(48), requested = crypto.randomUUID();
+  const deviceId = 'wuc-0123456789abcdef0123456789abcdef', username = 'office-pc', deviceKey = 'a'.repeat(48), requested = crypto.randomUUID();
   const registered = waitFor(host, 'host-registered');
-  host.send(JSON.stringify({ type: 'host-register', deviceId, deviceKey }));
-  await registered;
+  host.send(JSON.stringify({ type: 'host-register', deviceId, username, deviceKey }));
+  assert.equal((await registered).username, username);
   const incoming = waitFor(host, 'access-request');
   const pending = waitFor(viewer, 'access-pending');
-  viewer.send(JSON.stringify({ type: 'access-request', deviceId, attemptId: requested, verifier: 'b'.repeat(43) }));
+  viewer.send(JSON.stringify({ type: 'access-request', username, attemptId: requested, verifier: 'b'.repeat(43) }));
   const request = await incoming;
   const requestState = await pending;
   assert.equal(requestState.attemptId, requested);

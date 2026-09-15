@@ -1,11 +1,11 @@
-# Validation — 0.3.1
+# Validation — 0.4.0
 
 Validated locally on Windows, Node.js 22.14.0 and Electron 44.2.0 on 10–11 September 2026, with the Internet-mode update checked on 11 September. These are local implementation checks, not an internet or cross-platform certification.
 
 | Check | Result |
 | --- | --- |
-| JavaScript syntax | Passed, 24 files |
-| Automated unit/regression tests | 33 passed |
+| JavaScript syntax | Passed, 29 files |
+| Automated unit/regression tests | 36 passed |
 | Internet configuration and codes | Opt-in STUN/TURN, URL/credential validation, relay policy, v2 code round-trip, mode mismatch rejection, invitation binding and exclusion of TURN credentials passed |
 | Internet candidate gathering | Usable candidate snapshot exports before stalled interfaces finish; cancellation during snapshot collection passed |
 | Authenticated UDP TURN integration | Passed using the actual host/viewer UIs with relay-only policy, relay candidates at both ends, decoded 1920×1080 video, all four data channels, chat/files/clipboard and control-permission checks |
@@ -15,7 +15,7 @@ Validated locally on Windows, Node.js 22.14.0 and Electron 44.2.0 on 10–11 Sep
 | Four data channels; readiness gating and teardown | Passed |
 | Direct-mode ICE configuration | Empty ICE-server list; direct host candidates; no relay or server-reflexive candidates |
 | Direct-mode service requests | No HTTP/HTTPS/WebSocket requests observed; requests blocked and WebSocket constructors replaced with throwing stubs during direct integration testing |
-| Unattended broker | Local WebSocket server registers device keys by hash, rate-limits access requests, requires host approval and relays only the approved offer/answer exchange |
+| Unattended broker | Local WebSocket server registers unique usernames with device-key hashes, rate-limits access requests, requires host approval and relays only the approved offer/answer exchange |
 | Old signaling/ICE environment settings | Ignored, including invalid values |
 | Chat both directions and HTML-safe rendering | Passed |
 | Files both directions, explicit acceptance, SHA-256 byte comparison, receiver acknowledgement and Save file | Passed |
@@ -44,7 +44,7 @@ The earlier 60 FPS run covers screen capture, decoding, fullscreen pointer/keybo
 
 Reports are generated under `artifacts/serverless/`, including `smoke-report-30fps.json`, `smoke-report-60fps.json`, and `ui-ready.png`. The displayed frame rate is a capture target, not a guarantee of decoded FPS. RTT is the ICE candidate-pair round trip, not total input-to-screen latency.
 
-The current 0.3.1 Direct and TURN integration runs use a 30 FPS capture target. TURN results and the Internet UI screenshot are under `artifacts/internet/`. Before intentional teardown, no session errors are allowed. After End session, a single data-channel shutdown error is accepted because abrupt remote DTLS/SCTP closure can arrive before the channel-close event through the relay.
+The current 0.4.0 Direct and TURN integration runs use a 30 FPS capture target. TURN results and the Internet UI screenshot are under `artifacts/internet/`. Before intentional teardown, no session errors are allowed. After End session, a single data-channel shutdown error is accepted because abrupt remote DTLS/SCTP closure can arrive before the channel-close event through the relay.
 
 ## Required target-device checks
 

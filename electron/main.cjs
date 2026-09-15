@@ -34,6 +34,7 @@ function validNetwork(value) {
   if (!value || value.mode !== 'internet' || typeof value.turnUrls !== 'string' || !value.turnUrls.trim() || typeof value.username !== 'string' || !value.username.trim() || typeof value.credential !== 'string' || !value.credential) throw new Error('Unattended access requires Internet mode and TURN URL, username and password.');
   return { mode: 'internet', stunUrls: String(value.stunUrls || ''), turnUrls: value.turnUrls, username: value.username, credential: value.credential, relayOnly: value.relayOnly === true };
 }
+function validUsername(value) { return /^[a-z][a-z0-9-]{2,63}$/.test(String(value || '').trim().toLowerCase()); }
 function protect(value) {
   if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure desktop storage is unavailable. Enable your operating system keyring before configuring unattended access.');
   return safeStorage.encryptString(value).toString('base64');
@@ -61,7 +62,7 @@ function loadUnattended() {
 }
 function publicUnattended() {
   if (!unattended) return { enabled: false };
-  return { enabled: unattended.enabled === true, serverUrl: unattended.serverUrl, deviceId: unattended.deviceId, deviceKey: unattended.deviceKey, accessVerifier: unattended.accessVerifier, displayId: unattended.displayId || '', network: unattended.network, launchAtLogin: unattended.launchAtLogin === true };
+  return { enabled: unattended.enabled === true, username: unattended.username, serverUrl: unattended.serverUrl, deviceId: unattended.deviceId, deviceKey: unattended.deviceKey, accessVerifier: unattended.accessVerifier, displayId: unattended.displayId || '', network: unattended.network, launchAtLogin: unattended.launchAtLogin === true };
 }
 
 const input = new InputController({
@@ -131,6 +132,7 @@ function config() {
   return {
     platform: process.platform,
     version: app.getVersion(),
+    computerName: os.hostname(),
     screenAccess,
     systemAudio: process.platform === 'win32',
     edition: 'Direct with optional Internet mode'
@@ -176,8 +178,10 @@ app.whenReady().then(async () => {
     }
     const deviceId = typeof value.deviceId === 'string' && /^wuc-[a-z0-9]{20,64}$/.test(value.deviceId) ? value.deviceId : `wuc-${randomBytes(16).toString('hex')}`;
     const deviceKey = typeof value.deviceKey === 'string' && /^[A-Za-z0-9_-]{32,256}$/.test(value.deviceKey) ? value.deviceKey : randomValue();
+    const username = String(value.username || '').trim().toLowerCase();
+    if (!validUsername(username)) throw new Error('Use a username with 3-64 lowercase letters, numbers or hyphens.');
     if (typeof value.accessVerifier !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/.test(value.accessVerifier)) throw new Error('Set an unattended-access password before saving.');
-    const stored = { enabled: true, serverUrl: validateBrokerUrl(value.serverUrl), deviceId, displayId: typeof value.displayId === 'string' ? value.displayId.slice(0, 256) : '', launchAtLogin: value.launchAtLogin === true, deviceKey: protect(deviceKey), accessVerifier: protect(value.accessVerifier), network: protect(JSON.stringify(validNetwork(value.network))) };
+    const stored = { enabled: true, username, serverUrl: validateBrokerUrl(value.serverUrl), deviceId, displayId: typeof value.displayId === 'string' ? value.displayId.slice(0, 256) : '', launchAtLogin: value.launchAtLogin === true, deviceKey: protect(deviceKey), accessVerifier: protect(value.accessVerifier), network: protect(JSON.stringify(validNetwork(value.network))) };
     saveUnattended(stored);
     unattended = { ...stored, deviceKey, accessVerifier: value.accessVerifier, network: validNetwork(value.network) };
     try { app.setLoginItemSettings({ openAtLogin: stored.launchAtLogin }); } catch (error) { console.error('[Main] Could not set launch at login:', error.message); }

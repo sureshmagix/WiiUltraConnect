@@ -1,6 +1,6 @@
 # WiiUltraConnect 0.4.0
 
-A one-to-one desktop support app for screen sharing, fullscreen mouse/keyboard control, chat, files and clipboard text. **Direct** mode works without services. **Internet** mode uses a TURN relay for NAT/firewall fallback. A self-hosted signaling service adds password-protected unattended access: a configured computer registers while the app is running, then a trusted operator can connect by computer ID and access password without anyone present at the controlled computer.
+A Windows-focused remote-support app for screen sharing, remote control, chat, files and clipboard text. Its main screen is deliberately simple: enter a remote **username** and **password** to connect, or set your own username/password once for unattended access. Direct mode works without services; Internet mode uses your self-hosted signaling service and TURN relay for NAT/firewall fallback.
 
 ## Connect over the internet
 
@@ -16,9 +16,9 @@ The app does not use a third-party hosted relay. The included `server/` deployme
 
 ## Unattended access
 
-On the computer you want to control, choose **Internet · STUN / TURN**, enter the TURN URL, username and password, then open **Unattended access** and save a signaling URL, selected display and an access password of at least 12 characters. The app stores the device key, password verifier and TURN credentials with the operating system's encrypted desktop storage. It can start at sign-in when enabled.
+On the computer you want to control, open **Advanced** once, enter the signaling server and TURN settings, then choose a server-unique username and an access password of at least 12 characters under **This computer**. The app stores its private device key, password verifier and TURN credentials with the operating system's encrypted desktop storage. It can start at Windows sign-in when enabled.
 
-The operator selects **Control a partner**, chooses Internet mode with the same TURN settings, enters the signaling URL, computer ID and password, then chooses **Connect unattended**. The server rate-limits requests and forwards a derived password verifier to the registered computer. The password itself is never stored or sent to the signaling server. A successful verification starts capture and control automatically; the host can always stop it with **Ctrl/Cmd + Alt + Shift + F12**, Stop control or End session.
+The operator enters the remote username and password under **Control a computer**, then chooses **Connect**. The server rate-limits requests and forwards a derived password verifier to the registered computer. The password itself is never stored or sent to the signaling server. A successful verification starts capture and control automatically; the controlled computer can always stop access with **Ctrl/Cmd + Alt + Shift + F12**, Stop control or End session.
 
 Unattended access is intentionally limited to a logged-in desktop session where WiiUltraConnect is running. It does not bypass the operating-system login screen, UAC/secure desktop, screen-recording/accessibility permissions, or endpoint protection policies.
 
@@ -67,12 +67,9 @@ Only one host/viewer pair exists per app instance. Additional instances can esta
 
 ## Deploy your Utho server
 
-1. Point a DNS A record, such as `remote.example.com`, at the Utho public IPv4 address. Open TCP `80`, `443` and `3478`, plus UDP `3478` and UDP `49160-49200` in both the Utho cloud firewall and the server firewall.
-2. Copy `server/.env.example` to `server/.env` on the server. Set `WUC_DOMAIN`, the public `PUBLIC_IP`, and long random `TURN_USERNAME`/`TURN_PASSWORD` values. Do not commit `.env`.
-3. From the `server/` directory, run `docker compose up -d --build`. Caddy obtains and renews the TLS certificate. Confirm `https://your-domain/healthz` responds with `{"ok":true,...}`.
-4. In the app use `wss://your-domain/ws` for Signaling server URL and `turn:your-domain:3478?transport=udp` with the same TURN username/password on both computers. Start with **Use relay only** enabled to verify that the deployed relay is usable, then disable it for direct-first operation.
+See the separate [server deployment guide](server/README.md). In the app use `wss://your-domain/ws` for Server URL and `turn:your-domain:3478?transport=udp` with the same TURN username/password on both computers. Start with **Always use relay** enabled to verify that the deployed relay is usable, then disable it for direct-first operation.
 
-The server persists only registered computer IDs and hashes of device keys. It neither stores access passwords nor desktop/video/input/file content. Back up the Docker volume named `signal-data`; losing it only requires re-saving unattended access on each controlled computer.
+The server persists a unique username and a hash of each device key. It neither stores access passwords nor desktop/video/input/file content. Back up the Docker volume named `signal-data`; losing it only requires re-saving unattended access on each controlled computer.
 
 ## Run and build
 

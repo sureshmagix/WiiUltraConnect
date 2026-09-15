@@ -9,6 +9,7 @@ const dataPath = resolve(process.env.DATA_PATH || './data/devices.json');
 const MAX_MESSAGE = 120 * 1024;
 const MAX_ATTEMPTS_PER_MINUTE = 10;
 const DEVICE_ID = /^wuc-[a-z0-9]{20,64}$/;
+const USERNAME = /^[a-z][a-z0-9-]{2,63}$/;
 const keyHash = value => createHash('sha256').update(value).digest('hex');
 const equal = (a, b) => {
   const left = Buffer.from(String(a)), right = Buffer.from(String(b));
@@ -32,6 +33,8 @@ function saveDevices() {
   renameSync(temp, dataPath);
 }
 function validDevice(value) { return DEVICE_ID.test(String(value)); }
+function validUsername(value) { return USERNAME.test(String(value || '').trim().toLowerCase()); }
+function usernameFor(value) { return String(value || '').trim().toLowerCase(); }
 function message(socket, data) { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data)); }
 function error(socket, text) { message(socket, { type: 'error', message: text }); }
 
@@ -40,8 +43,8 @@ const attempts = new Map();
 const rate = new Map();
 function removeHost(socket) { for (const [id, host] of hosts) if (host.socket === socket) hosts.delete(id); }
 function removeAttempts(socket) { for (const [id, attempt] of attempts) if (attempt.host === socket || attempt.viewer === socket) attempts.delete(id); }
-function allowed(socket, deviceId) {
-  const now = Date.now(), key = `${socket._socket.remoteAddress || 'unknown'}:${deviceId}`;
+function allowed(socket, username) {
+  const now = Date.now(), key = `${socket._socket.remoteAddress || 'unknown'}:${username}`;
   const current = (rate.get(key) || []).filter(time => now - time < 60_000);
   if (current.length >= MAX_ATTEMPTS_PER_MINUTE) return false;
   current.push(now); rate.set(key, current); return true;
@@ -80,18 +83,23 @@ wss.on('connection', socket => {
     try { body = JSON.parse(raw.toString()); } catch { return error(socket, 'Invalid JSON message.'); }
     if (!body || typeof body !== 'object' || typeof body.type !== 'string') return error(socket, 'Invalid signaling message.');
     if (body.type === 'host-register') {
-      if (!validDevice(body.deviceId) || typeof body.deviceKey !== 'string' || body.deviceKey.length < 32 || body.deviceKey.length > 256) return error(socket, 'Invalid host registration.');
+      const username = usernameFor(body.username);
+      if (!validDevice(body.deviceId) || !validUsername(username) || typeof body.deviceKey !== 'string' || body.deviceKey.length < 32 || body.deviceKey.length > 256) return error(socket, 'Invalid host registration.');
       const hash = keyHash(body.deviceKey), known = devices[body.deviceId];
       if (known && !equal(known.keyHash, hash)) return error(socket, 'This computer ID belongs to another device. Reset unattended access on the controlled computer.');
-      if (!known) { devices[body.deviceId] = { keyHash: hash, createdAt: new Date().toISOString() }; saveDevices(); }
+      const usedBy = Object.entries(devices).find(([id, device]) => id !== body.deviceId && device.username === username);
+      if (usedBy) return error(socket, 'That username is already used by another computer. Choose a different username.');
+      if (!known || known.username !== username) { devices[body.deviceId] = { keyHash: hash, username, createdAt: known?.createdAt || new Date().toISOString() }; saveDevices(); }
       const old = hosts.get(body.deviceId); if (old && old.socket !== socket) old.socket.close(4001, 'replaced by a newer host connection');
-      hosts.set(body.deviceId, { socket, seenAt: Date.now() }); socket.deviceId = body.deviceId;
-      return message(socket, { type: 'host-registered', deviceId: body.deviceId });
+      hosts.set(body.deviceId, { socket, seenAt: Date.now(), username }); socket.deviceId = body.deviceId;
+      return message(socket, { type: 'host-registered', username });
     }
     if (body.type === 'access-request') {
-      if (!validDevice(body.deviceId) || typeof body.attemptId !== 'string' || body.attemptId.length < 16 || body.attemptId.length > 128 || typeof body.verifier !== 'string' || body.verifier.length < 32 || body.verifier.length > 128) return error(socket, 'Invalid unattended access request.');
-      if (!allowed(socket, body.deviceId)) return error(socket, 'Too many access attempts. Wait one minute and try again.');
-      const host = hosts.get(body.deviceId);
+      const username = usernameFor(body.username);
+      if (!validUsername(username) || typeof body.attemptId !== 'string' || body.attemptId.length < 16 || body.attemptId.length > 128 || typeof body.verifier !== 'string' || body.verifier.length < 32 || body.verifier.length > 128) return error(socket, 'Invalid unattended access request.');
+      if (!allowed(socket, username)) return error(socket, 'Too many access attempts. Wait one minute and try again.');
+      const deviceId = Object.entries(devices).find(([, device]) => device.username === username)?.[0];
+      const host = deviceId && hosts.get(deviceId);
       if (!host || host.socket.readyState !== WebSocket.OPEN) return message(socket, { type: 'host-offline', attemptId: body.attemptId });
       const id = randomUUID();
       attempts.set(id, { host: host.socket, viewer: socket, expiresAt: Date.now() + 120_000, approved: false });

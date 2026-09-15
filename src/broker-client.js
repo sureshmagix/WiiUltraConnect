@@ -1,4 +1,4 @@
-import { normalizeBrokerUrl, validAccessVerifier, validDeviceId } from './unattended-access.js';
+import { normalizeBrokerUrl, normalizeUsername, validAccessVerifier, validUsername } from './unattended-access.js';
 
 const MAX_MESSAGE = 120 * 1024;
 
@@ -53,14 +53,14 @@ export class BrokerClient extends EventTarget {
     this.socket.send(data);
   }
 
-  registerHost({ deviceId, deviceKey }) {
-    if (!validDeviceId(deviceId) || typeof deviceKey !== 'string' || deviceKey.length < 32 || deviceKey.length > 256) throw new Error('The unattended device configuration is invalid.');
-    this.send({ type: 'host-register', deviceId, deviceKey });
+  registerHost({ deviceId, deviceKey, username }) {
+    if (typeof deviceId !== 'string' || !/^wuc-[a-z0-9]{20,64}$/.test(deviceId) || !validUsername(username) || typeof deviceKey !== 'string' || deviceKey.length < 32 || deviceKey.length > 256) throw new Error('The unattended device configuration is invalid.');
+    this.send({ type: 'host-register', deviceId, deviceKey, username: normalizeUsername(username) });
   }
 
-  requestAccess({ deviceId, attemptId, verifier }) {
-    if (!validDeviceId(deviceId) || typeof attemptId !== 'string' || attemptId.length < 16 || !validAccessVerifier(verifier)) throw new Error('The unattended access request is invalid.');
-    this.send({ type: 'access-request', deviceId, attemptId, verifier });
+  requestAccess({ username, attemptId, verifier }) {
+    if (!validUsername(username) || typeof attemptId !== 'string' || attemptId.length < 16 || !validAccessVerifier(verifier)) throw new Error('The unattended access request is invalid.');
+    this.send({ type: 'access-request', username: normalizeUsername(username), attemptId, verifier });
   }
 
   decideAccess({ attemptId, approved }) {

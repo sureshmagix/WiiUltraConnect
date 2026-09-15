@@ -4,7 +4,7 @@ import { networkSummary } from './protocol.js';
 import { connectionConfig } from './connection-config.js';
 import { QUALITY, MAX_CLIPBOARD } from './session-messages.js';
 import { BrokerClient } from './broker-client.js';
-import { accessPasswordError, accessVerifier, normalizeBrokerUrl, validDeviceId } from './unattended-access.js';
+import { accessPasswordError, accessVerifier, normalizeBrokerUrl, normalizeUsername, validUsername } from './unattended-access.js';
 
 const $ = id => document.getElementById(id);
 let config, mode = 'host', peer = null, localStream = null, busy = false, operation = 0, sourceList = [], control = false, granting = false;
@@ -38,11 +38,11 @@ function refreshUI() {
   const active = Boolean(peer), connected = Boolean(peer?.ready), stream = Boolean(video.srcObject);
   for (const id of ['host-tab', 'viewer-tab', 'start-viewer', 'fps', 'bitrate', 'share-audio', 'invitation-input']) $(id).disabled = active || busy;
   for (const id of ['connection-mode', 'stun-urls', 'turn-urls', 'turn-username', 'turn-password', 'relay-only']) $(id).disabled = active || busy;
-  for (const id of ['unattended-enabled', 'unattended-server-url', 'unattended-password', 'unattended-password-confirm', 'unattended-login', 'save-unattended', 'unattended-target-id', 'unattended-target-password', 'start-unattended-viewer']) $(id).disabled = active || busy;
+  for (const id of ['unattended-enabled', 'unattended-username', 'unattended-server-url', 'unattended-password', 'unattended-password-confirm', 'unattended-login', 'save-unattended', 'unattended-target-id', 'unattended-target-password', 'start-unattended-viewer']) $(id).disabled = active || busy;
   $('share-audio').disabled ||= !config?.systemAudio;
   $('start-host').disabled = active || busy || !sourceList.length;
-  $('start-host').textContent = busy && !active ? 'Preparing display…' : active ? 'Session active' : 'Create invitation ↗';
-  $('start-unattended-viewer').textContent = busy && !active ? 'Connecting…' : 'Connect unattended';
+  $('start-host').textContent = busy && !active ? 'Preparing display…' : active ? 'Session active' : 'Create invitation';
+  $('start-unattended-viewer').textContent = busy && !active ? 'Connecting…' : 'Connect';
   $('apply-response').disabled = busy || peer?.phase !== 'awaiting-answer';
   $('response-input').disabled = busy || peer?.phase !== 'awaiting-answer';
   $('disconnect').disabled = !active && !localStream && !busy;
@@ -237,6 +237,10 @@ function randomValue(bytes = 16) {
   for (const value of values) text += String.fromCharCode(value);
   return btoa(text).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
+function suggestedUsername(value) {
+  const normalized = String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
+  return validUsername(normalized) ? normalized : 'this-pc';
+}
 function useUnattendedNetwork(network) {
   if (!network || network.mode !== 'internet') return;
   $('connection-mode').value = 'internet';
@@ -298,7 +302,7 @@ async function ensureViewerBroker(url) {
 }
 async function onBrokerMessage(message) {
   if (message.type === 'host-registered') {
-    $('unattended-status').textContent = `Online as ${message.deviceId}. This computer is ready for unattended access.`;
+    $('unattended-status').textContent = `Online as ${message.username}. This computer is ready for unattended access.`;
     return;
   }
   if (message.type === 'access-request') {
@@ -345,22 +349,22 @@ async function saveUnattended() {
     refreshUI(); return;
   }
   const serverUrl = normalizeBrokerUrl($('unattended-server-url').value);
-  let deviceId = $('unattended-device-id').value.trim() || `wuc-${randomValue(16).toLowerCase()}`;
-  if (!validDeviceId(deviceId)) throw new Error('The computer ID is invalid.');
+  const username = normalizeUsername($('unattended-username').value);
+  if (!validUsername(username)) throw new Error('Use a username with 3-64 lowercase letters, numbers or hyphens.');
   const password = $('unattended-password').value;
   const confirmation = $('unattended-password-confirm').value;
   let verifier = unattended.accessVerifier;
-  if (password || confirmation || !verifier) {
+  if (password || confirmation || !verifier || unattended.username !== username) {
     const error = accessPasswordError(password);
     if (error) throw new Error(error);
     if (password !== confirmation) throw new Error('The unattended-access passwords do not match.');
-    verifier = await accessVerifier(deviceId, password);
+    verifier = await accessVerifier(username, password);
   }
   const network = connectionSettings();
   connectionConfig(network);
   if (network.mode !== 'internet' || !network.turnUrls.trim()) throw new Error('Unattended access requires Internet mode with a configured TURN relay.');
-  unattended = await window.wii.saveUnattended({ enabled: true, serverUrl, deviceId, deviceKey: unattended.deviceKey || randomValue(32), accessVerifier: verifier, displayId: $('display-select').value, network, launchAtLogin: $('unattended-login').checked });
-  $('unattended-device-id').value = unattended.deviceId;
+  unattended = await window.wii.saveUnattended({ enabled: true, username, serverUrl, deviceId: unattended.deviceId, deviceKey: unattended.deviceKey || randomValue(32), accessVerifier: verifier, displayId: $('display-select').value, network, launchAtLogin: $('unattended-login').checked });
+  $('unattended-username').value = unattended.username;
   $('unattended-password').value = ''; $('unattended-password-confirm').value = '';
   clearBroker(false); await connectBrokerHost(); refreshUI();
 }
@@ -390,19 +394,20 @@ async function startUnattendedHost(attemptId) {
 }
 async function startUnattendedViewer() {
   if (peer || busy) return;
+  if (mode !== 'viewer') setMode('viewer');
   notice(''); busy = true; const current = ++operation; refreshUI();
   try {
     const network = connectionSettings();
     connectionConfig(network);
     if (network.mode !== 'internet' || !network.turnUrls.trim()) throw new Error('Unattended connections require Internet mode with a configured TURN relay.');
-    const deviceId = $('unattended-target-id').value.trim();
-    if (!validDeviceId(deviceId)) throw new Error('Enter the controlled computer ID.');
+    const username = normalizeUsername($('unattended-target-id').value);
+    if (!validUsername(username)) throw new Error('Enter the remote username.');
     const password = $('unattended-target-password').value;
-    const verifier = await accessVerifier(deviceId, password);
+    const verifier = await accessVerifier(username, password);
     const client = await ensureViewerBroker($('unattended-server-url').value);
     if (current !== operation || broker !== client) return;
     brokerAttempt = { viewer: true, requestId: crypto.randomUUID(), attemptId: null };
-    client.requestAccess({ deviceId, attemptId: brokerAttempt.requestId, verifier });
+    client.requestAccess({ username, attemptId: brokerAttempt.requestId, verifier });
   } catch (error) {
     if (current === operation) { notice(error.message); await reset('Could not request unattended access'); }
   } finally { if (current === operation) { busy = false; refreshUI(); } }
@@ -694,11 +699,11 @@ try {
    if (unattended.enabled) {
      $('unattended-enabled').checked = true;
      $('unattended-server-url').value = unattended.serverUrl;
-     $('unattended-device-id').value = unattended.deviceId;
+     $('unattended-username').value = unattended.username || '';
      $('unattended-login').checked = unattended.launchAtLogin === true;
      useUnattendedNetwork(unattended.network);
-     $('unattended-status').textContent = `Connecting ${unattended.deviceId} to its signaling server…`;
-   }
+     $('unattended-status').textContent = `Connecting ${unattended.username || 'this computer'} to its signaling server…`;
+   } else $('unattended-username').value = suggestedUsername(config.computerName);
    updateConnectionMode();
   $('app-version').textContent = 'v' + config.version;
   if (!config.systemAudio) $('share-audio').checked = false;

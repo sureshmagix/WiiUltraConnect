@@ -1,4 +1,4 @@
-const DEVICE_ID_PATTERN = /^wuc-[a-z0-9]{20,64}$/;
+const USERNAME_PATTERN = /^[a-z][a-z0-9-]{2,63}$/;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const encoder = new TextEncoder();
 
@@ -16,8 +16,12 @@ export function normalizeBrokerUrl(value) {
   return url.href;
 }
 
-export function validDeviceId(value) {
-  return DEVICE_ID_PATTERN.test(String(value));
+export function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+export function validUsername(value) {
+  return USERNAME_PATTERN.test(normalizeUsername(value));
 }
 
 export function validAccessVerifier(value) {
@@ -36,11 +40,12 @@ function base64url(bytes) {
   return btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-export async function accessVerifier(deviceId, password) {
-  if (!validDeviceId(deviceId)) throw new Error('The computer ID is invalid.');
+export async function accessVerifier(username, password) {
+  const identity = normalizeUsername(username);
+  if (!validUsername(identity)) throw new Error('Use a username with 3-64 lowercase letters, numbers or hyphens.');
   const error = accessPasswordError(password);
   if (error) throw new Error(error);
   const material = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: encoder.encode(`WiiUltraConnect unattended ${deviceId}`), iterations: 210000 }, material, 256);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: encoder.encode(`WiiUltraConnect unattended ${identity}`), iterations: 210000 }, material, 256);
   return base64url(new Uint8Array(bits));
 }
