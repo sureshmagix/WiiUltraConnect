@@ -1,0 +1,8 @@
+{
+  "name": "wiiultraconnect-signal",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.14" },
+  "dependencies": { "ws": "8.21.3" },
+  "scripts": { "start": "node index.mjs" }
+}

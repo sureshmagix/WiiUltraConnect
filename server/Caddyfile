@@ -1,0 +1,5 @@
+{$WUC_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy /ws signal:8787
+  reverse_proxy /healthz signal:8787
+}

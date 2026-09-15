@@ -1,164 +1,48 @@
-# WiiUltraConnect — architecture and implementation
+# Connection architecture — 0.4.0
 
-## 1. Architectural foundation and signaling
+The app establishes one host/viewer WebRTC connection. The host captures a selected display before creating an SDP offer. Users can exchange the complete invitation and answer themselves. Direct mode defaults to `iceServers: []` and ignores injected/legacy server settings. Explicit Internet mode validates local STUN/TURN settings and passes them to WebRTC; TURN supports authenticated UDP, TCP and TLS endpoints and an optional relay-only policy.
 
-```mermaid
-flowchart LR
-  subgraph H[Host Electron app]
-    HM[Main process: desktopCapturer + nut.js]
-    HP[Context-isolated preload]
-    HR[Sandboxed renderer: PeerSession]
-    HM <-->|Validated IPC| HP
-    HP <--> HR
-  end
-  subgraph V[Viewer Electron app]
-    VR[Sandboxed renderer: video + chat + files + input]
-  end
-  S[Node.js ws signaling server]
-  T[Optional TURN relay]
-  HR <-->|WSS: room, SDP, ICE| S
-  S <-->|WSS: room, SDP, ICE| VR
-  HR -->|SRTP screen video| VR
-  HR <-->|DTLS / SCTP data channels| VR
-  HR <-.->|Encrypted relay fallback| T
-  T <-.-> VR
-```
+The optional self-hosted signaling service accepts a WebSocket connection only at `/ws`. A controlled computer registers a server-unique username plus an internal high-entropy device key; the service stores the username and only a SHA-256 hash of that key. An operator requests an online computer using that username and a PBKDF2-derived access verifier. The service rate-limits attempts, forwards the verifier to the registered host and relays offer/answer messages only after the host accepts it. It never receives the raw access password, TURN credentials, WebRTC media, data-channel traffic or native input. Renderer CSP permits only WebSocket connections for this opt-in route; HTTP/HTTPS fetches remain blocked.
 
-The host owns capture and is the sole SDP offerer. The viewer answers. Restricting each room to these two roles avoids offer glare without introducing a generalized perfect-negotiation state machine. The signaling service never transports application video, chat, input or file payloads. It does see room secrets, SDP and candidate metadata. Peer transport is direct when ICE permits it; a configured TURN server relays encrypted traffic when required.
+Manual signaling transports SDP containing DTLS certificate fingerprints and ICE credentials. The response includes a SHA-256 binding to the original offer, protocol version, session UUID and lifetime. Validation bounds code/SDP sizes, requires complete ICE/fingerprint fields and candidates, and checks expiry/role. Version 1 Direct codes reject relays; version 2 Internet codes allow them. Prefix/version mismatches and mode mismatches are rejected before applying SDP. Codes never enable services or supply local server configuration. TURN credentials are encrypted at rest through Electron's safe storage and excluded from generated packets. WebRTC encrypts video/audio and data between the two endpoints, including relayed traffic.
 
-[`server/signaling.mjs`](../server/signaling.mjs) exports a server factory, while `server/index.mjs` supplies environment-based startup. It generates a 48-bit room ID and an independent 192-bit invitation secret with Node crypto. Join validates that secret using equal-length, constant-time comparison. Rooms are routed by socket membership, not client-provided recipient identifiers. Role-specific validation permits only host offers, viewer answers and bounded ICE objects.
+Gathering is bounded to 15 seconds in Direct mode and 45 seconds in Internet mode. Internet mode exports a usable snapshot one second after obtaining a relay candidate (when TURN is configured), or a mapped STUN candidate otherwise, if gathering has not completed sooner. This avoids exhausting viewer ICE checks while unused interfaces or other endpoints time out. Later candidates are not exchanged; if the exported paths fail, try another configured endpoint and exchange new codes. Host connection checks after applying the response are bounded to 30 and 60 seconds respectively. Diagnostics distinguish mapped STUN addresses, missing TURN allocations and available relay addresses; allocation is not proof of end-to-end reachability. ICE errors are reported without echoing server URLs or credentials.
 
-| Message | Direction | Payload |
-| --- | --- | --- |
-| `create` | Host → server | None |
-| `created` | Server → host | `roomId`, `invitation`, `role` |
-| `join` | Viewer → server | `roomId`, `secret` |
-| `joined` | Server → viewer | `roomId`, `role` |
-| `peer-ready` | Server → host | Triggers peer creation and offer |
-| `offer` / `answer` | Peer → server → other peer | `description: { type, sdp }` |
-| `ice` | Peer → server → other peer | Serialized `RTCIceCandidate` |
-| `leave` | Peer → server | Invalidates room |
-| `peer-left` | Server → remaining peer | Stops session and capture |
-| `error` | Server → peer | Bounded error code |
+## Lifecycle
 
-```mermaid
-sequenceDiagram
-  participant H as Host
-  participant S as Signaling
-  participant V as Viewer
-  H->>H: Select display and start capture
-  H->>S: create
-  S->>H: created + private invitation
-  Note over H,V: Host shares invitation out of band
-  V->>S: join(roomId, secret)
-  S->>V: joined
-  S->>H: peer-ready
-  H->>S: offer
-  S->>V: offer
-  V->>S: answer
-  S->>H: answer
-  H->>S: ICE candidates
-  S->>V: ICE candidates
-  V->>S: ICE candidates
-  S->>H: ICE candidates
-  Note over H,V: ICE may arrive before SDP; receiver queues candidates
-  H->>V: Screen video
-  H->>V: Chat, files, control permission
-  V->>H: Chat, files, permitted input
-```
+Host: `new → gathering → awaiting-answer → connecting → connected`.
 
-Heartbeat ping/pong removes dead sockets. Rate and payload limits bound ordinary connection abuse; a public gateway still needs per-IP and user admission limits. Every peer departure deletes its room, preventing stale invitations from silently admitting replacement viewers. A lost signaling connection intentionally ends the peer session even if media could temporarily survive independently.
+Viewer: `new → gathering → awaiting-host → connected`.
 
-## 2. Screen capture and WebRTC pipeline
+A connection event that occurs while gathering must not be overwritten by a waiting state. The host accepts one matching answer; malformed answers leave the invitation available for retry. An established session does not expire with the invitation. All four channels and the peer connection must be ready before collaboration/input controls become available.
 
-[`electron/main.cjs`](../electron/main.cjs) lists screens using `desktopCapturer.getSources`. A local display selection arms `setDisplayMediaRequestHandler`; only the app's exact main frame can request the chosen source. [`src/app.js`](../src/app.js) calls `navigator.mediaDevices.getDisplayMedia` without audio and tells main when the granted capture has started. A sandboxed renderer never imports Electron or a native input package directly.
+On a transient disconnect, input is revoked and the existing connection gets 15 seconds to recover. Recovered connections require new host control consent. There is no automatic ICE restart or resumption across fresh addresses; terminal failures require new codes. End session aborts gathering, timers, transfers, tracks, channels and held input. Generation checks prevent late capture or consent completions from reviving an ended session.
 
-The capture request uses **ideal** constraints; `getDisplayMedia` does not accept the same mandatory capture selection constraints as older Electron examples. Once the track exists, `applyConstraints` caps it to 30/60 FPS and 1920×1080. `contentHint = 'motion'` suggests motion handling. Permission failures and unavailable displays are shown in the app; a constraint failure preserves the stream with a visible notice.
+## Peer channels and media
 
-[`src/peer.js`](../src/peer.js) adds the video track before the host's offer and receives it through `ontrack` at the viewer. It applies sender parameters after connection:
+| Channel | Responsibility |
+| --- | --- |
+| `chat` | Bounded, text-only messages |
+| `files` | Explicit offer/accept, 16 KiB binary chunks, offsets, drain backpressure, timeout/cancel and receipt acknowledgement |
+| `input` | Host control state and viewer pointer/key/wheel/release/held-input heartbeat |
+| `session` | Control request/release, validated display metadata/requests, quality requests and explicit clipboard offers |
 
-```js
-parameters.degradationPreference = 'maintain-framerate';
-parameters.encodings[0].maxBitrate = bitrateMbps * 1_000_000;
-parameters.encodings[0].maxFramerate = targetFps;
-parameters.encodings[0].priority = 'high';
-parameters.encodings[0].networkPriority = 'high';
-await sender.setParameters(parameters);
-```
+All channels use reliable, ordered delivery. Input queues are bounded; congested pointer moves are discarded, while a stalled key/button path ends the session to release input. Native operations are serialized and invalidated by a consent epoch. Heartbeats preserve deliberate long holds while a separate watchdog releases inputs after inactivity.
 
-These are bandwidth and adaptation hints, not an FPS or end-to-end latency guarantee. The stack negotiates its supported codecs; it does not rewrite SDP or force an unavailable encoder. There is no application video buffering. ICE candidates received before the remote description are queued (maximum 256), then flushed. Signaling handlers execute serially, preventing concurrent SDP changes. Connection setup times out after 30 seconds; a transient disconnect gets eight seconds to recover, but input consent is revoked immediately.
+Host video uses `replaceTrack` for live monitor changes. The replacement completes before the old video track stops, and the negotiated audio track is preserved. Capture selection and display changes revoke input before changing coordinate mapping. Quality requests adjust both capture constraints and sender bitrate/frame-rate limits.
 
-The displayed FPS is an RTP statistic when available. The displayed millisecond number is candidate-pair round-trip time, **not** measured glass-to-glass latency. `getStats()` identifies direct versus relayed candidates. Closing the app, ending the session or a stopped capture track tears down tracks, timers, channels and room membership.
+Files are limited to 128 MiB each. Each direction permits one in-flight transfer. The UI retains at most 256 MiB of received file Blobs and prunes old finished rows. Saving is separate from receipt; no received file is executed or opened automatically. Clipboard transfer is text-only and never replaces the recipient clipboard without a local click.
 
-## 3. P2P chat and chunked file transfer
+## Native boundaries
 
-The host creates three ordered, reliable `RTCDataChannel`s: `chat`, `files` and `input`. Separate channels allow small interactive messages to be scheduled separately, while all still share congestion control and the network.
+The renderer is sandboxed, context-isolated and has no Node integration. Navigation/new windows are blocked. Main validates IPC sender, main frame and exact local page URL. Capture requests must originate from that frame and match a selected, not-yet-granted screen. There is no fallback to an unselected display.
 
-Chat is `{ type: 'chat', text }`, capped at 4,000 characters with outbound buffering and inbound rate limits. The renderer builds messages with `textContent`; a peer's HTML remains text. The latest 200 messages remain in the DOM.
+Remote input requires active capture, a connected app session, valid display coordinates and successful registration of **Ctrl/Cmd + Alt + Shift + F12**. Manual sessions require a native host consent dialog. Unattended sessions skip that dialog only when the controlled computer is locally configured for unattended access and its locally stored PBKDF2 verifier accepts the incoming request. Revocation invalidates queued work before awaiting native release. Lost displays, crashed renderers and app shutdown revoke permissions. Display scale coordinates convert from Electron DIP to native Windows pixels.
 
-[`src/file-transfer.js`](../src/file-transfer.js) uses this protocol:
+Fullscreen uses the entire session panel so End session, control permission, quality, scaling and chat remain reachable. Pointer coordinates refer to the displayed video image, including letterboxing and scrolled actual-size views. Focus loss, pointer cancellation, window blur and visibility changes release held inputs. OS-reserved shortcuts and secure desktops remain outside the ordinary capture/input boundary.
 
-```mermaid
-sequenceDiagram
-  participant S as Sender
-  participant R as Receiver
-  S->>R: file-offer(id, name, size)
-  R->>R: User accepts or declines
-  R->>S: file-accept(id)
-  loop While file remains
-    S->>S: Wait if bufferedAmount exceeds high watermark
-    S->>S: file.slice(offset, offset + chunkSize).arrayBuffer()
-    S->>R: UUID + offset + binary bytes
-    R->>R: Check ID, exact offset and accepted byte budget
-  end
-  S->>R: file-end(id)
-  R->>R: Verify exact size and assemble Blob
-  R->>S: file-complete(id)
-  R->>R: User chooses Save file
-```
+## Connectivity limits
 
-- Each binary packet has a 16-byte UUID, a 4-byte big-endian byte offset and at most 16 KiB of payload. Payload size also respects negotiated `pc.sctp.maxMessageSize`.
-- Sender pauses above 256 KiB buffered data and resumes at/below 64 KiB using `bufferedamountlow`. Listener registration includes an immediate state recheck to avoid a missed drain event. Abort, close, error and 60-second timeout all reject the pending wait and remove listeners.
-- Metadata is validated before any allocation; the receiver allows a maximum 128 MiB declared size, one incoming transfer and one outgoing transfer. Empty files work. Filename paths and control characters are stripped, and a peer cannot specify a local filesystem destination.
-- Exact offsets and byte counts reject gaps, duplication and overflow. The reliable transport supplies delivery and integrity protection. A separate application checksum is not in the wire protocol; the integration test independently compares SHA-256 to verify implementation correctness.
-- Offers require user acceptance. No binary data is sent before acceptance. Cancellation and disconnect discard partial chunks. Old packets already queued for a cancelled UUID are ignored. There is no automatic retry or partial resume.
-- Progress differentiates sending, waiting for receipt, received and delivered. Sender completion depends on the receiver acknowledgement, not merely queuing the last bytes. Receiver save is a separate action.
+Local interface and SDP candidate checks report possible public routes; they do not certify remote reachability. CGNAT/private-only endpoints on unrelated networks may need TURN. Direct mode deliberately has no NAT-traversal fallback. Internet mode requires a reachable, correctly configured STUN/TURN service; no hosted relay is bundled or provisioned. A successful allocation still depends on relay permissions/ports, provider availability and the remote path. Restrictive firewalls can also block relay access. Manual codes cannot bypass these restrictions.
 
-## 4. Remote input control
-
-[`src/viewer-input.js`](../src/viewer-input.js) computes the actual image rectangle inside an `object-fit: contain` video, subtracting letterbox offsets before normalization:
-
-```text
-scale = min(elementWidth / videoWidth, elementHeight / videoHeight)
-imageWidth = videoWidth × scale
-imageHeight = videoHeight × scale
-x = (pointerX - elementLeft - horizontalLetterbox) / imageWidth
-y = (pointerY - elementTop - verticalLetterbox) / imageHeight
-```
-
-Clicks in letterbox bars are ignored. Pointer capture keeps drag releases flowing outside the video and clamps dragged coordinates to `[0,1]`. Pointer moves coalesce to animation frames; button events flush any pending move first, preserving order. Keyboard input is sent only while the shared video has focus. Blur, visibility loss and pointer cancellation send a release-all message.
-
-Input messages contain a small allowlisted vocabulary:
-
-```js
-{ type: 'pointer', action: 'move', x: 0.5, y: 0.5 }
-{ type: 'pointer', action: 'down', x: 0.5, y: 0.5, button: 0 }
-{ type: 'key', action: 'down', code: 'ControlLeft' }
-{ type: 'key', action: 'up', code: 'ControlLeft' }
-{ type: 'wheel', dy: 100 }
-{ type: 'release' }
-```
-
-The host starts in view-only mode. Its **Allow remote control** button opens a native confirmation dialog; the renderer cannot grant itself permission by receiving a peer packet. Main requires an active locally granted capture, maps the captured display ID to display bounds, verifies Accessibility on macOS and registers the emergency shortcut. Failure to register the shortcut leaves control disabled.
-
-[`electron/input-controller.cjs`](../electron/input-controller.cjs) validates input again in main, maps browser key codes to known nut.js enums, and serializes asynchronous native operations. It calls `mouse.setPosition(new Point(...))`, separate `pressButton`/`releaseButton`, `keyboard.pressKey`/`releaseKey`, and bounded scroll methods. There are no shell commands or dynamically selected native methods from peer data.
-
-Revocation changes a generation counter synchronously. Already queued operations check that counter before execution; an in-flight pointer move checks it again before pressing a button. Held keys/buttons are tracked and released after in-flight native work completes. Queue overflow disables control. A watchdog releases stale held input, and display changes require renewed consent. The viewer receives a `control-state` message reflecting host permission, but native main-process state is the final gate.
-
-## API references
-
-- [Electron desktopCapturer](https://www.electronjs.org/docs/latest/api/desktop-capturer/) and [display media request handler](https://www.electronjs.org/docs/latest/api/session#sessetdisplaymediarequesthandlerhandler-opts) — capture and source selection.
-- [Electron security guidance](https://www.electronjs.org/docs/latest/tutorial/security) — context isolation, sandboxing, narrow preload methods and sender validation.
-- [ws server API](https://github.com/websockets/ws/blob/master/doc/ws.md) — WebSocket server limits and lifecycle.
-- [WebRTC data channel buffering](https://developer.mozilla.org/en-US/docs/Web/API/RTCDataChannel/bufferedAmountLowThreshold) and [message size guidance](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Using_data_channels) — backpressure and moderate packet sizes.
-- [nut.js mouse](https://nutjs.dev/docs/mouse), [keyboard](https://nutjs.dev/docs/keyboard) and [installation](https://nutjs.dev/docs/installation) — native operations and platform requirements.
+References: [WebRTC peer connections](https://webrtc.org/getting-started/peer-connections), [Electron capture permissions](https://www.electronjs.org/docs/latest/api/session), [TURN's role](https://webrtc.org/getting-started/turn-server).
