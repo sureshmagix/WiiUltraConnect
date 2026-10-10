@@ -1,8 +1,11 @@
 const { app, BrowserWindow, desktopCapturer, ipcMain, session, screen, dialog, globalShortcut, systemPreferences, clipboard, powerSaveBlocker } = require('electron');
 const path = require('node:path');
 const os = require('node:os');
+const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { InputController } = require('./input-controller.cjs');
+const { checkForVerifiedUpdate, downloadVerifiedArtifact, readUpdateState, writeUpdateState } = require('./update-client.cjs');
+const { compareVersions } = require('./update-verifier.cjs');
 
 app.setName('WiiUltraConnect');
 if (process.env.WII_SMOKE !== '1') app.setPath('userData', path.join(app.getPath('appData'), 'WiiUltraConnect'));
@@ -15,6 +18,22 @@ let grantEpoch = 0;
 let quitting = false;
 let activeSession = false;
 let blocker;
+let verifiedUpdate;
+
+function readUpdateConfiguration() {
+  try {
+    const configPath = path.join(app.getAppPath(), 'build', 'update-endpoint.json');
+    const updateConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    if (!updateConfig || updateConfig.metadataUrl === null) return { metadataUrl: null };
+    if (typeof updateConfig.metadataUrl !== 'string') throw new Error('metadataUrl must be null or a credential-free HTTPS URL');
+    const metadataUrl = new URL(updateConfig.metadataUrl);
+    if (metadataUrl.protocol !== 'https:' || metadataUrl.username || metadataUrl.password || metadataUrl.hash) throw new Error('metadataUrl must be a credential-free HTTPS URL without a fragment');
+    return { metadataUrl: metadataUrl.toString() };
+  } catch (error) {
+    console.error(`[Update] Invalid update configuration: ${error.message}`);
+    return { metadataUrl: null };
+  }
+}
 
 const input = new InputController({
   loadNative: async () => {
@@ -85,7 +104,8 @@ function config() {
     version: app.getVersion(),
     screenAccess,
     systemAudio: process.platform === 'win32',
-    edition: 'Direct · No intermediary services'
+    edition: 'Direct · No intermediary services',
+    updatesConfigured: Boolean(readUpdateConfiguration().metadataUrl)
   };
 }
 
@@ -116,6 +136,24 @@ app.whenReady().then(async () => {
 
   handle('app:config', config);
   handle('app:networkInfo', getNetworkInfo);
+  handle('update:check', async () => {
+    const updateConfig = readUpdateConfiguration();
+    if (!updateConfig.metadataUrl) throw new Error('Updates are not configured in this build. Install a signed release manually.');
+    const keyring = JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'build', 'update-keys.json'), 'utf8'));
+    const statePath = path.join(app.getPath('userData'), 'update-state.json');
+    const state = readUpdateState(statePath);
+    const format = process.platform === 'win32' ? 'nsis' : process.platform === 'darwin' ? 'zip' : 'deb';
+    const result = await checkForVerifiedUpdate({ metadataUrl: updateConfig.metadataUrl, keyring, state: { ...state, currentVersion: app.getVersion() }, platform: process.platform, arch: process.arch, format });
+    writeUpdateState(statePath, result.nextState);
+    verifiedUpdate = compareVersions(result.signed.version, app.getVersion()) > 0 ? result : undefined;
+    return { available: Boolean(verifiedUpdate), version: result.signed.version, artifact: verifiedUpdate ? { name: result.artifact.name, size: result.artifact.size } : undefined };
+  });
+  handle('update:download', async () => {
+    if (!verifiedUpdate) throw new Error('Check for an update first. No verified newer update is pending.');
+    const destination = path.join(app.getPath('downloads'), verifiedUpdate.artifact.name);
+    const result = await downloadVerifiedArtifact({ artifact: verifiedUpdate.artifact, destination });
+    return { file: result.destination, sha256: result.digest };
+  });
   handle('session:active', async value => {
     activeSession = value === true;
     if (!activeSession) await revokeControl();

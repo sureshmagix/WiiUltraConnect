@@ -1,6 +1,6 @@
 import { MAX_CHAT_LENGTH, determineRouteType, networkSummary } from './protocol.js';
 import { FileTransfer } from './file-transfer.js';
-import { directIceConfig, decodePacket, encodePacket, offerFingerprint, validateAnswer, gatherComplete, INVITATION_TTL, candidateAddresses } from './direct-signaling.js';
+import { directIceConfig, decodePacket, encodePacket, offerFingerprint, sessionVerificationCode, validateAnswer, gatherComplete, INVITATION_TTL, candidateAddresses } from './direct-signaling.js';
 import { CHANNELS, validSessionMessage, QUALITY } from './session-messages.js';
 
 export class PeerSession extends EventTarget {
@@ -48,10 +48,17 @@ export class PeerSession extends EventTarget {
       // ICE can connect while gathering. Never overwrite an already connected phase.
       if (this.phase !== 'connected') { this.phase = 'awaiting-host'; this.armExpiry(); }
       this.emit('diagnostics', networkSummary(candidateAddresses(answer.description.sdp)));
+      this.emit('verification', await sessionVerificationCode(offer, answer));
       this.emit('status', 'Return this response to the host promptly to finish connecting.');
       this.emit('response', code);
       return code;
     } catch (error) { this.close(); throw error; }
+  }
+  async reviewResponse(code) {
+    if (this.closed || this.role !== 'host' || this.phase !== 'awaiting-answer') throw new Error('This invitation is no longer waiting for a response.');
+    const answer = decodePacket(code, 'answer');
+    await validateAnswer(answer, this.offer);
+    return sessionVerificationCode(this.offer, answer);
   }
   async applyResponse(code) {
     if (this.closed || this.role !== 'host' || this.phase !== 'awaiting-answer' || this.applying) throw new Error('This invitation is no longer waiting for a response.');

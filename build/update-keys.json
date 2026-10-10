@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "keys": [
+    {
+      "keyId": "release-2026-bootstrap",
+      "algorithm": "ed25519",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAULaoeUa5lv1LawJx3Uc0bE+MgFJn566Hi/DMF/y+ZWI=\n-----END PUBLIC KEY-----\n",
+      "notBefore": "2026-01-01T00:00:00.000Z",
+      "notAfter": "2027-12-31T23:59:59.000Z",
+      "purpose": "release-metadata"
+    }
+  ]
+}

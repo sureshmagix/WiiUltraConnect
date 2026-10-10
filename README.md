@@ -16,11 +16,11 @@ This follows the requested **no intermediary server** constraint. General connec
 2. On the host, choose **Share this computer**, select a display, then **Create invitation**. Windows can optionally share system audio.
 3. Copy the complete invitation and send it privately to your intended partner through a channel you arrange.
 4. The viewer chooses **Control a partner**, pastes the invitation, and clicks **Create response**.
-5. The viewer returns the complete response to the host. The host pastes it and clicks **Connect directly**.
+5. The viewer reads the response-bound verification code to the host through a separate trusted channel (for example, a known phone number). The host pastes the response, clicks **Verify response and show code**, compares the matching code, confirms the comparison, then clicks **Connect directly**.
 6. Once connected, the viewer clicks **Request control**, or the host clicks **Allow control**. The host approves the native permission dialog.
 7. The viewer clicks the remote desktop to focus input. **Fullscreen** or **F11** fills the display while keeping the session toolbar available.
 
-Invitations expire after ten minutes; exchange them promptly, because connectivity checks can fail sooner. They contain network addresses, ICE credentials and certificate fingerprints. They are encoded, not encrypted, and must be exchanged privately and authentically. Each response is bound to the exact invitation. A short session label is shown for reference; it is not a remotely searchable computer ID or password.
+Invitations expire after ten minutes; exchange them promptly, because connectivity checks can fail sooner. They contain network addresses, ICE credentials and certificate fingerprints. They are encoded, not encrypted, and must be exchanged privately and authentically. The displayed verification code is a short rendering of the invitation and validated response binding: it helps detect a substituted response only when people compare it over an independent trusted channel. It is not a saved device identity, password, or a substitute for authenticated device pairing.
 
 ## Remote workspace
 
@@ -43,7 +43,7 @@ Invitations expire after ten minutes; exchange them promptly, because connectivi
 | Diagnostics | Local address assessment, selected route, resolution, FPS, ICE round-trip time and video Mbps |
 | Interrupted connection | Revoke input immediately, allow 15 seconds for the existing path to recover; fresh codes after terminal failure |
 
-Only one host/viewer pair exists per app instance. Additional instances can establish separate pairs; this is not a multi-viewer room or centralized computer directory. One emergency-stop shortcut must be available for each actively controlled host desktop. There is no unattended service, access to login/UAC secure desktops, remote reboot/reconnect, remote printing, full IME/layout translation, automatic updates, or claim of complete UltraViewer feature parity. [UltraViewer's own feature overview](https://www.ultraviewer.net/en/) includes multi-computer support that differs from this one-to-one design.
+Only one host/viewer pair exists per app instance. Additional instances can establish separate pairs; this is not a multi-viewer room or centralized computer directory. One emergency-stop shortcut must be available for each actively controlled host desktop. There is no unattended remote-access service, access to login/UAC secure desktops, remote reboot/reconnect, remote printing, full IME/layout translation, unattended update installation, or claim of complete UltraViewer feature parity. Signed updates, when a production channel is configured, are checked only when the user chooses the in-app action and still require them to run the verified installer. [UltraViewer's own feature overview](https://www.ultraviewer.net/en/) includes multi-computer support that differs from this one-to-one design.
 
 ## Run and build
 
@@ -61,18 +61,17 @@ npm run check
 npm test
 npm run smoke
 npm run smoke -- 60
-npm run pack
-node scripts/verify-package.cjs
-npm run dist:win
+npm run dist:mac:silicon       # on macOS
+npm run verify:release
 ```
 
-The Windows unpacked app is `release/win-unpacked/WiiUltraConnect.exe`. Keep the entire folder together. Distribution builds produce an NSIS installer and ZIP. Builds are unsigned; no signing credentials or update service are configured. Other OS targets require their respective build/test environments.
+See [Build and release](docs/BUILD_AND_RELEASE.md) for the target matrix, exact artifact locations, native-runtime checks, checksums/SBOM, signing, and authenticated-update process. See [Installation](docs/INSTALLATION.md) for repair, upgrade, service consent, and data-removal choices. Builds without protected signing credentials are explicitly labeled unsigned development artifacts.
 
 ## Permissions and validation
 
 Windows uses Electron capture and nut.js native input. macOS needs Screen Recording and Accessibility permission. Linux capture depends on the desktop environment; native input requires X11 and is disabled on Wayland. Elevated/secure OS surfaces can reject input.
 
-The native input provider is an optional dependency. Without it, viewing/chat/files still work and control reports a clear error. The pinned provider retains seven moderate audit entries through its Jimp/file-type parser dependency. Incoming files are not passed to this image parser; a compatible upstream fix is still required.
+The native input provider is bundled with each target and pruning/verification prevents foreign-platform modules from shipping. The pinned provider retains seven moderate audit entries through its Jimp/file-type parser dependency. Incoming files are not passed to this image parser; a compatible upstream fix is still required.
 
 See [validation results](docs/VALIDATION.md) for exactly what has been exercised, including the limits of local testing, and [architecture](docs/ARCHITECTURE.md) for the connection and permission boundaries. Test screenshots/reports are generated under `artifacts/serverless/`. App data uses the `WiiUltraConnect` user-data directory; messages and transfer state are kept in memory.
 

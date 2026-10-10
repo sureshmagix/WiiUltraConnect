@@ -5,6 +5,10 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const artifacts = path.join(__dirname, '../artifacts/serverless');
 mkdirSync(artifacts, { recursive: true });
+// This file is Electron's entry point for the smoke process, not the app
+// package root. Keep app.getAppPath() aligned with production so the main
+// process reads the checked-in update configuration rather than scripts/build.
+app.setAppPath(path.join(__dirname, '..'));
 app.setPath('userData', path.join(artifacts, 'smoke-profile'));
 // Exercise the real renderer → WebRTC → trusted IPC → InputController boundary,
 // but replace the final OS input provider so tests cannot type into the user's apps.
@@ -40,6 +44,14 @@ async function until(fn, message, timeout = 15_000) {
   throw new Error(message);
 }
 const js = (win, code) => win.webContents.executeJavaScript(code, true);
+function unavailable(error) {
+  const detail = error instanceof Error ? error.message : String(error);
+  const result = { status: 'unavailable', reason: detail, platform: process.platform, electron: process.versions.electron };
+  writeFileSync(path.join(artifacts, 'smoke-unavailable.json'), `${JSON.stringify(result, null, 2)}\n`);
+  console.log(`SKIP Electron smoke test: ${detail}`);
+  app.exit(77);
+}
+
 app.whenReady().then(async () => {
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (details, callback) => {
     serviceRequests.push(details.url); callback({ cancel: true });
@@ -217,6 +229,10 @@ app.whenReady().then(async () => {
   writeFileSync(path.join(artifacts, `smoke-report-${process.env.WII_SMOKE_FPS || '30'}fps.json`), result);
   viewer.destroy(); app.quit();
 }).catch(error => {
+  // desktopCapturer reports this when the test host has no active display or
+  // its user has not granted the OS Screen Recording permission. That is a
+  // test-environment prerequisite, not a passing smoke result.
+  if (/Failed to get sources|No displays available|Screen capture or offline invitation failed/i.test(error.message || '')) return unavailable(error);
   console.error(error);
   console.error('Renderer errors:', errors);
   writeFileSync(path.join(artifacts, 'smoke-failure.txt'), `${error.stack}\n${errors.join('\n')}`);

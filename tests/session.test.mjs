@@ -62,6 +62,18 @@ test('viewer cannot send input without consent or after channel failure', t => {
   peer.channels.session.close();
   assert.equal(peer.closed, true); assert.equal(peer.sendInput({ type: 'release' }), false);
 });
+test('input-message flood closes the session before an unbounded queue can form', t => {
+  const { peer, connect } = fixture(t); connect();
+  peer.setControl(true);
+  // The limiter replenishes against wall time. Send materially beyond its
+  // 300-message one-second budget so normal test-run timing cannot mask the
+  // fail-closed path.
+  for (let index = 0; index < 500; index += 1) {
+    if (peer.closed) break;
+    peer.channels.input.receive({ type: 'pointer', action: 'move', x: 0.5, y: 0.5 });
+  }
+  assert.equal(peer.closed, true);
+});
 test('monitor replacement awaits negotiation-safe replaceTrack before stopping old capture', async t => {
   const { peer, track, connect } = fixture(t); connect();
   let done;

@@ -5,7 +5,7 @@ import { QUALITY, MAX_CLIPBOARD } from './session-messages.js';
 
 const $ = id => document.getElementById(id);
 let config, mode = 'host', peer = null, localStream = null, busy = false, operation = 0, sourceList = [], control = false, granting = false;
-let messages = 0, pendingClipboard = '', changingDisplay = false;
+let messages = 0, pendingClipboard = '', changingDisplay = false, verifiedUpdate = false, verificationConfirmed = false, reviewedResponse = '';
 const transfers = new Map(), downloadUrls = new Set();
 const bytes = value => value < 1024 ? value + ' B' : value < 1024 ** 2 ? (value / 1024).toFixed(1) + ' KiB' : (value / 1024 ** 2).toFixed(1) + ' MiB';
 const video = $('screen-video');
@@ -36,7 +36,9 @@ function refreshUI() {
   $('share-audio').disabled ||= !config?.systemAudio;
   $('start-host').disabled = active || busy || !sourceList.length;
   $('start-host').textContent = busy && !active ? 'Preparing display…' : active ? 'Session active' : 'Create invitation ↗';
-  $('apply-response').disabled = busy || peer?.phase !== 'awaiting-answer';
+  $('verify-response').disabled = busy || peer?.phase !== 'awaiting-answer';
+  $('host-verification-confirmed').disabled = !reviewedResponse;
+  $('apply-response').disabled = busy || peer?.phase !== 'awaiting-answer' || !reviewedResponse || !verificationConfirmed;
   $('response-input').disabled = busy || peer?.phase !== 'awaiting-answer';
   $('disconnect').disabled = !active && !localStream && !busy;
   $('display-select').disabled = busy || changingDisplay || active && !connected;
@@ -79,6 +81,8 @@ async function reset(message = 'Ready to connect') {
   $('route-stat').textContent = 'No active connection'; $('fps-stat').textContent = '— FPS'; $('rtt-stat').textContent = '— ms';
   $('resolution-stat').textContent = ''; $('bandwidth-stat').textContent = '';
   for (const id of ['invitation-output', 'response-input', 'response-output']) $(id).value = '';
+  for (const id of ['host-verification-code', 'viewer-verification-code']) $(id).textContent = '—';
+  reviewedResponse = ''; verificationConfirmed = false; $('host-verification-confirmed').checked = false;
   $('host-exchange').hidden = true; $('viewer-exchange').hidden = true;
   $('clipboard-incoming').hidden = true; pendingClipboard = ''; $('clipboard-preview').textContent = '';
   $('screen-stage').classList.remove('actual'); $('view-scale').value = 'fit';
@@ -228,6 +232,12 @@ function newPeer() {
   });
   on('invitation', code => { $('invitation-output').value = code; $('host-exchange').hidden = false; $('session-id').textContent = session.offer.sessionId.slice(0, 8); refreshUI(); });
   on('response', code => { $('response-output').value = code; $('viewer-exchange').hidden = false; $('session-id').textContent = session.offer.sessionId.slice(0, 8); refreshUI(); });
+  on('verification', code => {
+    // The viewer can show the response-bound code when its response is ready.
+    // The host gets the same code only after it validates the pasted response.
+    $('viewer-verification-code').textContent = code;
+    refreshUI();
+  });
   on('status', text => { status(text); refreshUI(); });
   on('diagnostics', value => { $('network-summary').textContent = value.message; });
   on('connected', async () => {
@@ -310,10 +320,21 @@ async function startViewer() {
 }
 async function applyResponse() {
   if (!peer || busy || peer.phase !== 'awaiting-answer') return;
+  if (!reviewedResponse || reviewedResponse !== $('response-input').value || !verificationConfirmed) throw new Error('Verify this response and compare its session verification code with your partner over a separate trusted channel before connecting.');
   notice(''); busy = true; const session = peer; refreshUI();
   try { await session.applyResponse($('response-input').value); }
   catch (error) { notice(error.message); }
   finally { if (peer === session) { busy = false; refreshUI(); } }
+}
+async function reviewResponse() {
+  if (!peer || busy || peer.phase !== 'awaiting-answer') return;
+  verificationConfirmed = false; $('host-verification-confirmed').checked = false;
+  const response = $('response-input').value;
+  const code = await peer.reviewResponse(response);
+  reviewedResponse = response;
+  $('host-verification-code').textContent = code;
+  notice('Read this response-bound code to your partner over a separate trusted channel, then confirm the match.');
+  refreshUI();
 }
 async function changeDisplay(id, remote = false) {
   if (mode !== 'host' || !peer?.ready || busy || changingDisplay || !sourceList.some(s => s.id === id)) return;
@@ -409,7 +430,13 @@ function handle(id, fn, event = 'click') {
 }
 handle('host-tab', () => setMode('host')); handle('viewer-tab', () => setMode('viewer'));
 handle('chat-tab', () => showTab('chat')); handle('files-tab', () => showTab('files'));
-handle('start-host', startHost); handle('start-viewer', startViewer); handle('apply-response', applyResponse);
+handle('start-host', startHost); handle('start-viewer', startViewer); handle('verify-response', reviewResponse); handle('apply-response', applyResponse);
+handle('host-verification-confirmed', event => { verificationConfirmed = event.target.checked; refreshUI(); }, 'change');
+handle('response-input', () => {
+  if (!reviewedResponse) return;
+  reviewedResponse = ''; verificationConfirmed = false; $('host-verification-confirmed').checked = false;
+  $('host-verification-code').textContent = '—'; refreshUI();
+}, 'input');
 handle('refresh-displays', refreshSources); handle('refresh-network', checkNetwork);
 handle('display-select', previewSource, 'change'); handle('switch-display', () => changeDisplay($('display-select').value));
 handle('remote-display', () => peer.sendSession({ type: 'display-request', id: $('remote-display').value }), 'change');
@@ -466,6 +493,36 @@ handle('screenshot', () => {
     setTimeout(() => { URL.revokeObjectURL(url); downloadUrls.delete(url); }, 30_000);
   }, 'image/png');
 });
+handle('check-updates', async () => {
+  if (!config?.updatesConfigured) throw new Error('This build has no configured update channel. Install a signed release manually.');
+  const button = $('check-updates');
+  if (verifiedUpdate) {
+    button.disabled = true; button.textContent = 'Downloading…';
+    try {
+      const download = await window.wii.downloadUpdate();
+      button.textContent = 'Update downloaded';
+      notice(`Verified installer downloaded to ${download.file}. Close WiiUltraConnect and run that installer to update.`);
+    } catch (error) {
+      button.disabled = false; button.textContent = 'Retry download';
+      throw error;
+    }
+    return;
+  }
+  button.disabled = true; button.textContent = 'Checking…';
+  try {
+    const result = await window.wii.checkForUpdate();
+    if (result.available) {
+      verifiedUpdate = true; button.disabled = false; button.textContent = `Download v${result.version}`;
+      notice(`A signed v${result.version} update is available. Click Download to verify and save ${result.artifact.name}.`);
+    } else {
+      button.disabled = false; button.textContent = 'Check updates';
+      notice(`No newer signed update is available (metadata v${result.version}).`);
+    }
+  } catch (error) {
+    button.disabled = false; button.textContent = 'Check updates';
+    throw error;
+  }
+});
 $('chat-form').onsubmit = event => {
   event.preventDefault();
   try { const text = $('chat-input').value.trim(); if (text) { peer.sendChat(text); addMessage(text, true); $('chat-input').value = ''; } }
@@ -487,6 +544,8 @@ try {
   config = await window.wii.config();
   $('platform-label').textContent = ({ win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[config.platform] || 'Desktop') + ' · Direct';
   $('app-version').textContent = 'v' + config.version;
+  $('check-updates').disabled = !config.updatesConfigured;
+  if (!config.updatesConfigured) $('check-updates').title = 'No update channel is configured for this build';
   if (!config.systemAudio) $('share-audio').checked = false;
   if (config.screenAccess === 'denied') notice('Enable Screen Recording for WiiUltraConnect in System Settings, then restart the app.');
   await Promise.all([refreshSources(), checkNetwork()]);

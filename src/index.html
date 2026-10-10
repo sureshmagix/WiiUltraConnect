@@ -11,7 +11,7 @@
 <body>
   <header class="topbar">
     <div class="brand"><img src="icon.png" alt="Logo" class="topbar-logo" width="36" height="36" style="border-radius:10px;object-fit:cover;"><div><strong>WiiUltra<span>Connect</span></strong><small>DIRECT REMOTE WORKSPACE</small></div></div>
-    <div class="topbar-right"><span id="platform-label">Desktop</span><span id="connection-badge" class="badge"><i></i><span>Ready</span></span></div>
+    <div class="topbar-right"><button id="check-updates" class="text-button" title="Check signed release metadata" disabled>Check updates</button><span id="platform-label">Desktop</span><span id="connection-badge" class="badge"><i></i><span>Ready</span></span></div>
   </header>
   <main>
     <div class="page-heading"><div><div class="eyebrow">YOUR COMPUTERS. CONNECTED DIRECTLY.</div><h1>A remote desk, within reach.</h1><p>Screen, mouse, keyboard, conversation. One connection between two devices.</p></div><span class="privacy-note">↔ No intermediary services</span></div>
@@ -35,8 +35,11 @@
             <div class="label-row"><label for="invitation-output">1. Send this invitation</label><button id="copy-invitation" class="text-button">Copy invitation</button></div>
             <textarea id="invitation-output" rows="3" readonly aria-label="Host invitation"></textarea>
             <label for="response-input">2. Paste your partner’s response</label><textarea id="response-input" rows="3" maxlength="103424" placeholder="WUC-DIRECT-1.…" spellcheck="false"></textarea>
+            <button id="verify-response" class="button subtle full">Verify response and show code</button>
+            <p class="verification-note">Response-bound verification code <code id="host-verification-code">—</code></p>
+            <label class="check-label verification-confirm"><input id="host-verification-confirmed" type="checkbox" disabled>I compared this code with my partner over a separate trusted channel.</label>
             <button id="apply-response" class="button primary full">Connect directly</button>
-            <p class="small-note">Invitations expire after 10 minutes. Exchange codes promptly using a trusted channel.</p>
+            <p class="small-note">Verify before connecting. The comparison binds this response to the invitation, but is not a saved device identity.</p>
           </div>
           <button id="switch-display" class="button subtle full" hidden>Share selected display</button>
         </div>
@@ -47,7 +50,8 @@
           <div id="viewer-exchange" class="exchange" hidden>
             <div class="label-row"><label for="response-output">2. Send this response back</label><button id="copy-response" class="text-button">Copy response</button></div>
             <textarea id="response-output" rows="4" readonly aria-label="Viewer response"></textarea>
-            <p class="small-note">The host pastes this response and clicks Connect directly. Both apps must stay open.</p>
+            <p class="verification-note">Read this response-bound verification code to your partner using a separate trusted channel: <code id="viewer-verification-code">—</code></p>
+            <p class="small-note">The host pastes this response, verifies it to see the same code, then confirms the match and connects. Both apps must stay open.</p>
           </div>
           <div class="help-card"><strong>Control stays with the host.</strong><p>Once connected, request mouse and keyboard access. The host approves it on their own computer.</p></div>
         </div>

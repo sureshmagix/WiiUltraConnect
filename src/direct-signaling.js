@@ -54,6 +54,22 @@ export async function offerFingerprint(offer) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
+export function formatVerificationCode(fingerprint) {
+  if (typeof fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(fingerprint)) throw new Error('Invalid session verification value.');
+  // This displays the existing offer binding; it is not a new key exchange or
+  // identity protocol. Compare it over a channel independent from the copied
+  // invitation/response, such as a known phone number.
+  return fingerprint.slice(0, 24).toUpperCase().match(/.{4}/g).join('-');
+}
+export async function sessionVerificationCode(offer, answer) {
+  if (!answer) return formatVerificationCode(await offerFingerprint(offer));
+  // The verification display must cover the response as well as the
+  // invitation. An offer-only display would not detect a substituted viewer
+  // response, because every valid answer carries the original offer hash.
+  const canonical = JSON.stringify([await offerFingerprint(offer), answer.description?.sdp]);
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+  return formatVerificationCode([...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join(''));
+}
 export async function validateAnswer(answer, offer, now = Date.now()) {
   validatePacket(answer, 'answer', now);
   validatePacket(offer, 'offer', now);

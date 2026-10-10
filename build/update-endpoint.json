@@ -1,0 +1,5 @@
+{
+  "metadataUrl": null,
+  "channel": "stable",
+  "note": "Development default. A release build must set a HTTPS metadata URL through the protected release pipeline before update checks are enabled."
+}

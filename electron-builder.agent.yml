@@ -1,0 +1,50 @@
+# The headless agent uses the Electron runtime shipped in this DEB.  It never
+# invokes a system Node.js installation and never installs a service itself.
+appId: com.wiiultraconnect.agent
+productName: WiiUltraConnectAgent
+executableName: wiiultraconnect-agent
+artifactName: wiiultraconnect-agent_${version}_${arch}.${ext}
+publish: null
+directories:
+  buildResources: build
+  output: release
+extraMetadata:
+  main: agent/main.cjs
+files:
+  - agent/**/*.cjs
+  - build/update-keys.json
+  - build/update-endpoint.json
+  - package.json
+asar: true
+asarUnpack:
+  - node_modules/@nut-tree-fork/**/*
+  - "**/*.node"
+  - "**/*.dll"
+  - "**/*.dylib"
+  - "**/*.so"
+extraResources:
+  - from: agent/service
+    to: agent-service
+    filter:
+      - "**/*"
+npmRebuild: false
+afterPack: ./scripts/after-pack.cjs
+linux:
+  target:
+    - deb
+  icon: build/icon.png
+  category: Network
+  packageCategory: net
+  synopsis: WiiUltraConnect local headless status agent
+deb:
+  artifactName: wiiultraconnect-agent_${version}_${arch}.${ext}
+  packageCategory: net
+  priority: optional
+  compression: xz
+  depends:
+    - libc6 (>= 2.35)
+    - libglib2.0-0
+    - libnss3
+    - libx11-6
+    - libxkbcommon0
+    - libxtst6

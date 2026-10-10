@@ -1,0 +1,106 @@
+name: Package and verify
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - codex/**
+  workflow_dispatch:
+
+# This workflow produces review artifacts only.  It never creates a GitHub
+# release, uploads to an update origin, or exports signing material.
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64 installer
+            runner: windows-2022
+            target: win
+            arch: x64
+            family: windows
+            experimental: false
+          - name: macOS Intel installer
+            runner: macos-13
+            target: mac
+            arch: x64
+            family: macos
+            experimental: false
+          - name: macOS Apple Silicon installer
+            runner: macos-14
+            target: mac
+            arch: arm64
+            family: macos
+            experimental: false
+          - name: Ubuntu x64 DEB
+            runner: ubuntu-24.04
+            target: linux
+            arch: x64
+            family: linux
+            experimental: false
+          - name: Headless Linux agent x64 DEB
+            runner: ubuntu-24.04
+            target: agent-linux
+            arch: x64
+            family: linux
+            experimental: false
+          # This lane is intentionally non-blocking until libnut publishes or
+          # the project supplies a verified ARM64 native module.  Its strict
+          # pack-time architecture check prevents a misleading DEB artifact.
+          - name: Ubuntu ARM64 DEB (native-module gate)
+            runner: ubuntu-24.04-arm
+            target: linux
+            arch: arm64
+            family: linux
+            experimental: true
+          - name: Headless Linux agent ARM64 DEB (native-module gate)
+            runner: ubuntu-24.04-arm
+            target: agent-linux
+            arch: arm64
+            family: linux
+            experimental: true
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Static and update-security tests
+        run: |
+          npm run check
+          npm test
+      - name: Build, inspect runtime, and create installer
+        run: node scripts/build-target.mjs --target ${{ matrix.target }} --arch ${{ matrix.arch }}
+        env:
+          # electron-builder consumes these directly; their values are never
+          # echoed and are available only on trusted repository events.
+          CSC_LINK: ${{ matrix.family == 'windows' && secrets.WINDOWS_CSC_LINK || matrix.family == 'macos' && secrets.MACOS_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.family == 'windows' && secrets.WINDOWS_CSC_KEY_PASSWORD || matrix.family == 'macos' && secrets.MACOS_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ matrix.family == 'macos' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.family == 'macos' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.family == 'macos' && secrets.APPLE_TEAM_ID || '' }}
+      - name: Label signed or development output
+        run: node scripts/write-build-status.mjs release/${{ matrix.target == 'agent-linux' && format('agent-linux-{0}', matrix.arch) || format('{0}-{1}', matrix.target, matrix.arch) }}
+        env:
+          WII_BUILD_PLATFORM: ${{ matrix.name }}
+          WII_SIGNING_PRESENT: ${{ matrix.family != 'linux' && ((matrix.family == 'windows' && secrets.WINDOWS_CSC_LINK != '') || (matrix.family == 'macos' && secrets.MACOS_CSC_LINK != '')) }}
+      - name: Produce checksums, notices, and SBOM
+        run: node scripts/generate-release-materials.mjs --input release/${{ matrix.target == 'agent-linux' && format('agent-linux-{0}', matrix.arch) || format('{0}-{1}', matrix.target, matrix.arch) }} --output release/materials
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: wiiultraconnect-${{ matrix.target }}-${{ matrix.arch }}
+          path: |
+            release/${{ matrix.target == 'agent-linux' && format('agent-linux-{0}', matrix.arch) || format('{0}-{1}', matrix.target, matrix.arch) }}
+            release/materials
+          retention-days: 14

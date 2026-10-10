@@ -1,0 +1,108 @@
+# Targets are built on their matching OS. Windows and Linux also require a
+# matching CPU runner; macOS uses a validated universal native module and can
+# package either requested slice on a macOS host. The wrapper isolates each
+# target in release/<target>.
+appId: com.wiiultraconnect.desktop
+productName: WiiUltraConnect
+executableName: WiiUltraConnect
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+# The application uses the separately authenticated Ed25519 metadata flow in
+# electron/update-client.cjs. Do not infer a GitHub publisher from git remote.
+publish: null
+directories:
+  buildResources: build
+  output: release
+files:
+  - electron/**/*
+  - src/**/*
+  - build/update-keys.json
+  - build/update-endpoint.json
+  - package.json
+asar: true
+# libnut resolves its .node library at runtime.  Keeping this tree unpacked
+# makes Electron's native-module loader work; scripts/after-pack.cjs removes
+# every platform implementation other than the target's implementation.
+asarUnpack:
+  - node_modules/@nut-tree-fork/**/*
+  - "**/*.node"
+  - "**/*.dll"
+  - "**/*.dylib"
+  - "**/*.so"
+npmRebuild: false
+afterPack: ./scripts/after-pack.cjs
+
+win:
+  target: nsis
+  icon: build/icon.png
+  verifyUpdateCodeSignature: true
+  forceCodeSigning: false
+  signtoolOptions:
+    signingHashAlgorithms:
+      - sha256
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  perMachine: false
+  packElevateHelper: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+  include: build/installer/windows.nsh
+  artifactName: ${productName}-${version}-windows-x64-setup.${ext}
+
+mac:
+  target:
+    - dmg
+    - zip
+  icon: build/icon.icns
+  category: public.app-category.productivity
+  minimumSystemVersion: "12.0"
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  forceCodeSigning: false
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  extendInfo:
+    NSScreenCaptureUsageDescription: Share a display with the person you invite to WiiUltraConnect.
+    NSAccessibilityUsageDescription: Allow remote-control input only after you approve a connected viewer.
+linux:
+  target:
+    - deb
+  icon: build/icon.png
+  category: Network
+  packageCategory: net
+  executableName: wiiultraconnect
+  synopsis: Direct one-to-one desktop support
+deb:
+  artifactName: wiiultraconnect_${version}_${arch}.${ext}
+  packageCategory: net
+  priority: optional
+  compression: xz
+  depends:
+    - libasound2
+    - libatk-bridge2.0-0
+    - libatk1.0-0
+    - libatspi2.0-0
+    - libc6 (>= 2.35)
+    - libcairo2
+    - libdrm2
+    - libgbm1
+    - libglib2.0-0
+    - libgtk-3-0
+    - libnspr4
+    - libnss3
+    - libpango-1.0-0
+    - libx11-6
+    - libx11-xcb1
+    - libxcb1
+    - libxcomposite1
+    - libxdamage1
+    - libxext6
+    - libxfixes3
+    - libxkbcommon0
+    - libxrandr2
+    - libxss1
+    - libxtst6
+    - xdg-utils

@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('wii', Object.freeze({
   config: () => ipcRenderer.invoke('app:config'),
   networkInfo: () => ipcRenderer.invoke('app:networkInfo'),
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
   sessionActive: value => ipcRenderer.invoke('session:active', value),
   readClipboard: () => ipcRenderer.invoke('clipboard:read'),
   writeClipboard: value => ipcRenderer.invoke('clipboard:write', value),

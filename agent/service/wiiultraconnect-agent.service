@@ -1,0 +1,19 @@
+[Unit]
+Description=WiiUltraConnect local status agent
+Documentation=file:///usr/share/doc/wiiultraconnect-agent/README.Debian
+ConditionPathExists=/opt/WiiUltraConnectAgent/wiiultraconnect-agent
+
+[Service]
+Type=simple
+ExecStart=/opt/WiiUltraConnectAgent/wiiultraconnect-agent --service
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%t
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=default.target
